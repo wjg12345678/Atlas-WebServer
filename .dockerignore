@@ -1,0 +1,6 @@
+server
+ServerLog
+*.o
+test_pressure/webbench-1.5/webbench
+test_pressure/webbench-1.5/webbench.o
+.git

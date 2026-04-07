@@ -1,0 +1,236 @@
+#include <mysql/mysql.h>
+#include <stdio.h>
+#include <string>
+#include <string.h>
+#include <stdlib.h>
+#include <list>
+#include <pthread.h>
+#include <iostream>
+#include "sql_connection_pool.h"
+
+using namespace std;
+
+connection_pool::connection_pool()
+{
+	m_CurConn = 0;
+	m_FreeConn = 0;
+	m_MaxConn = 0;
+	m_idleTimeout = 60;
+}
+
+connection_pool *connection_pool::GetInstance()
+{
+	static connection_pool connPool;
+	return &connPool;
+}
+
+MYSQL *connection_pool::create_connection()
+{
+	MYSQL *con = mysql_init(NULL);
+	if (con == NULL)
+	{
+		return NULL;
+	}
+
+	bool reconnect = true;
+	mysql_options(con, MYSQL_OPT_RECONNECT, &reconnect);
+
+	MYSQL *connected = mysql_real_connect(con, m_url.c_str(), m_User.c_str(), m_PassWord.c_str(),
+										  m_DatabaseName.c_str(), atoi(m_Port.c_str()), NULL, 0);
+	if (connected == NULL)
+	{
+		mysql_close(con);
+		return NULL;
+	}
+	return connected;
+}
+
+bool connection_pool::reconnect_connection(MYSQL *&conn)
+{
+	if (conn != NULL)
+	{
+		m_connLastActive.erase(conn);
+		mysql_close(conn);
+		conn = NULL;
+	}
+
+	conn = create_connection();
+	if (conn == NULL)
+	{
+		return false;
+	}
+
+	m_connLastActive[conn] = time(NULL);
+	return true;
+}
+
+bool connection_pool::check_connection(MYSQL *conn)
+{
+	if (conn == NULL)
+	{
+		return false;
+	}
+
+	time_t now = time(NULL);
+	map<MYSQL *, time_t>::iterator it = m_connLastActive.find(conn);
+	if (it == m_connLastActive.end())
+	{
+		m_connLastActive[conn] = now;
+		return true;
+	}
+
+	if (now - it->second < m_idleTimeout)
+	{
+		return true;
+	}
+
+	if (mysql_ping(conn) != 0)
+	{
+		return false;
+	}
+
+	it->second = now;
+	return true;
+}
+
+//构造初始化
+void connection_pool::init(string url, string User, string PassWord, string DBName, int Port, int MaxConn, int close_log, int idle_timeout)
+{
+	m_url = url;
+	m_Port = Port;
+	m_User = User;
+	m_PassWord = PassWord;
+	m_DatabaseName = DBName;
+	m_close_log = close_log;
+	m_idleTimeout = idle_timeout > 0 ? idle_timeout : 60;
+
+	for (int i = 0; i < MaxConn; i++)
+	{
+		MYSQL *con = create_connection();
+		if (con == NULL)
+		{
+			LOG_ERROR("MySQL Error");
+			exit(1);
+		}
+		connList.push_back(con);
+		m_connLastActive[con] = time(NULL);
+		++m_FreeConn;
+	}
+
+	reserve = sem(m_FreeConn);
+
+	m_MaxConn = m_FreeConn;
+}
+
+
+//当有请求时，从数据库连接池中返回一个可用连接，更新使用和空闲连接数
+MYSQL *connection_pool::GetConnection()
+{
+	MYSQL *con = NULL;
+
+	reserve.wait();
+	
+	lock.lock();
+	if (connList.empty())
+	{
+		lock.unlock();
+		return NULL;
+	}
+
+	con = connList.front();
+	connList.pop_front();
+
+	--m_FreeConn;
+	++m_CurConn;
+
+	lock.unlock();
+
+	if (!check_connection(con) && !reconnect_connection(con))
+	{
+		lock.lock();
+		--m_CurConn;
+		--m_MaxConn;
+		lock.unlock();
+		return NULL;
+	}
+
+	lock.lock();
+	m_connLastActive[con] = time(NULL);
+	lock.unlock();
+	return con;
+}
+
+//释放当前使用的连接
+bool connection_pool::ReleaseConnection(MYSQL *con)
+{
+	if (NULL == con)
+		return false;
+
+	lock.lock();
+	bool healthy = check_connection(con) || reconnect_connection(con);
+	if (!healthy)
+	{
+		--m_CurConn;
+		--m_MaxConn;
+		lock.unlock();
+		return false;
+	}
+
+	connList.push_back(con);
+	m_connLastActive[con] = time(NULL);
+	++m_FreeConn;
+	--m_CurConn;
+
+	lock.unlock();
+
+	reserve.post();
+	return true;
+}
+
+//销毁数据库连接池
+void connection_pool::DestroyPool()
+{
+
+	lock.lock();
+	if (connList.size() > 0)
+	{
+		list<MYSQL *>::iterator it;
+		for (it = connList.begin(); it != connList.end(); ++it)
+		{
+			MYSQL *con = *it;
+			m_connLastActive.erase(con);
+			mysql_close(con);
+		}
+		m_CurConn = 0;
+		m_FreeConn = 0;
+		m_MaxConn = 0;
+		connList.clear();
+	}
+
+	lock.unlock();
+}
+
+//当前空闲的连接数
+int connection_pool::GetFreeConn()
+{
+	return this->m_FreeConn;
+}
+
+connection_pool::~connection_pool()
+{
+	DestroyPool();
+}
+
+connectionRAII::connectionRAII(MYSQL **SQL, connection_pool *connPool){
+	*SQL = connPool->GetConnection();
+	
+	conRAII = *SQL;
+	poolRAII = connPool;
+}
+
+connectionRAII::~connectionRAII(){
+	if (conRAII != NULL)
+	{
+		poolRAII->ReleaseConnection(conRAII);
+	}
+}

@@ -366,7 +366,8 @@ void WebServer::init(int port, string user, string passWord, string databaseName
                      int opt_linger, int trigmode, int sql_num, int thread_num, int threadpool_max_threads,
                      int threadpool_idle_timeout, int mysql_idle_timeout, int conn_timeout,
                      int close_log, int actor_model, int log_level, int log_split_lines, int log_queue_size,
-                     int https_enable, const string &https_cert_file, const string &https_key_file)
+                     int https_enable, const string &https_cert_file, const string &https_key_file,
+                     const string &auth_token)
 {
     m_port = port;
     m_user = user;
@@ -390,6 +391,7 @@ void WebServer::init(int port, string user, string passWord, string databaseName
     m_https_enable = https_enable;
     m_https_cert_file = https_cert_file;
     m_https_key_file = https_key_file;
+    m_auth_token = auth_token;
     m_conn_timeout = conn_timeout > 0 ? conn_timeout : 15;
     m_sub_reactor_num = thread_num > 0 ? thread_num : 1;
     m_next_sub_reactor = 0;
@@ -584,6 +586,7 @@ bool WebServer::dealclientdata()
 
 void WebServer::dealwithread(int sockfd)
 {
+    http_conn::set_auth_token(m_auth_token);
     if (users[sockfd].needs_tls_handshake())
     {
         int handshake_result = users[sockfd].do_tls_handshake();
@@ -606,6 +609,7 @@ void WebServer::dealwithread(int sockfd)
 
 void WebServer::dealwithwrite(int sockfd)
 {
+    http_conn::set_auth_token(m_auth_token);
     if (users[sockfd].needs_tls_handshake())
     {
         int handshake_result = users[sockfd].do_tls_handshake();

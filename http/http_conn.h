@@ -20,6 +20,7 @@
 #include <sys/sendfile.h>
 #include <map>
 #include <time.h>
+#include <string>
 #include <openssl/ssl.h>
 
 #include "../lock/locker.h"
@@ -62,7 +63,8 @@ public:
         INTERNAL_ERROR,
         CLOSED_CONNECTION,
         OPTIONS_REQUEST,
-        NOT_IMPLEMENTED
+        NOT_IMPLEMENTED,
+        MEMORY_REQUEST
     };
     enum LINE_STATUS
     {
@@ -78,6 +80,7 @@ public:
 public:
     void init(int epollfd, int sockfd, const sockaddr_in &addr, char *, int, int, string user, string passwd, string sqlname);
     static void configure_tls(SSL_CTX *ssl_ctx, bool https_enabled);
+    static void set_auth_token(const string &auth_token);
     void close_conn(bool real_close = true);
     void process();
     bool read_once();
@@ -101,8 +104,20 @@ public:
     {
         return m_https_enabled && !m_tls_handshake_done;
     }
+    typedef HTTP_CODE (http_conn::*RouteHandler)();
     int timer_flag;
     int improv;
+    HTTP_CODE route_api_login();
+    HTTP_CODE route_api_register();
+    HTTP_CODE route_api_echo();
+    HTTP_CODE route_api_private_ping();
+    HTTP_CODE route_page_login();
+    HTTP_CODE route_page_register();
+    HTTP_CODE route_register_page();
+    HTTP_CODE route_login_page();
+    HTTP_CODE route_picture_page();
+    HTTP_CODE route_video_page();
+    HTTP_CODE route_fans_page();
 
 
 private:
@@ -133,6 +148,27 @@ private:
     HTTP_CODE parse_headers(char *text);
     HTTP_CODE parse_content(char *text);
     HTTP_CODE do_request();
+    HTTP_CODE run_before_middlewares();
+    HTTP_CODE run_after_middlewares(HTTP_CODE code);
+    HTTP_CODE middleware_request_log();
+    HTTP_CODE middleware_auth();
+    HTTP_CODE route_request();
+    HTTP_CODE handle_api_request();
+    HTTP_CODE handle_auth_request(bool is_register, bool api_mode);
+    HTTP_CODE handle_static_route();
+    HTTP_CODE open_static_file();
+    bool parse_post_body();
+    bool parse_form_urlencoded(const string &body);
+    bool parse_json_body(const string &body);
+    string url_decode(const string &value) const;
+    string trim_copy(const string &value) const;
+    string json_escape(const string &value) const;
+    string request_value(const string &primary, const string &fallback = "") const;
+    const char *method_name() const;
+    bool is_api_request() const;
+    bool requires_auth() const;
+    bool resolve_static_path(const char *route_path);
+    void set_memory_response(int status, const char *title, const string &body, const char *content_type);
     char *get_line() { return m_read_buf + m_start_line; };
     LINE_STATUS parse_line();
     void close_file();
@@ -183,7 +219,6 @@ private:
     bool m_chunked;
     struct stat m_file_stat;
     int cgi;        //是否启用的POST
-    char *m_string; //存储请求头数据
     int bytes_to_send;
     int bytes_have_send;
     int m_header_bytes_sent;
@@ -201,6 +236,14 @@ private:
     int m_close_log;
     time_t m_last_active;
     char m_content_type[64];
+    char m_response_content_type[64];
+    int m_response_status;
+    char m_response_status_title[64];
+    string m_request_body;
+    string m_response_body_storage;
+    map<string, string> m_form_data;
+    map<string, string> m_json_data;
+    string m_authorization;
 
     char sql_user[100];
     char sql_passwd[100];
@@ -208,6 +251,7 @@ private:
 
     static SSL_CTX *m_ssl_ctx;
     static bool m_tls_enabled;
+    static string m_auth_token;
 };
 
 #endif

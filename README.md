@@ -1,37 +1,53 @@
 # TinyWebServer
 
-基于 C++ 的轻量级 Web 服务器项目，在原始 TinyWebServer 的基础上完成了面向工程化场景的一轮升级，重点补强了并发模型、连接管理、日志系统、后台运行能力和 HTTPS 支持。
+基于 C++ 的 Linux Web 服务器项目，重点覆盖了 Reactor 并发模型、HTTP/1.1 请求处理、静态文件传输、线程池、连接池、日志系统、配置化运行、守护进程和 HTTPS。
 
-当前版本已经从经典的“半同步半反应堆”演进为更接近生产场景的 `Main-Reactor + Multi-SubReactor` 架构，并补充了 ET、Keep-Alive、超时管理、动态线程池、异步日志、守护进程与 OpenSSL TLS。
+当前版本已经从经典的“半同步半反应堆”演进为 `Main-Reactor + Multi-SubReactor`，并补齐了 `ET`、`Keep-Alive`、超时管理、异步日志、OpenSSL TLS、中间件链、基础 API 路由等能力，适合放进 GitHub 作为 Linux 网络编程/C++ 服务端项目展示。
 
-## 项目亮点
+## 项目定位
+
+- 展示 Linux 网络编程、`epoll`、Reactor、多线程协作
+- 展示 HTTP 服务端基础设施能力，而不只是页面 demo
+- 展示从课程型项目向工程化项目演进的思路
+
+## 核心特性
 
 - `Main-Reactor + Multi-SubReactor` 多反应堆模型
-- `epoll` 边缘触发 `ET`，支持 ET 模式下一次性读满
-- HTTP/1.1 基础解析与 `Keep-Alive`
-- 静态文件传输支持 `sendfile`
+- `epoll ET` 边缘触发，支持一次性读满直到 `EAGAIN`
+- HTTP/1.1 基础解析、长连接 `Keep-Alive`
+- 路由分发：按“方法 + 路径”分派请求
+- 中间件链：请求日志、统一鉴权、统一错误响应
+- `sendfile` 零拷贝发送静态文件
 - HTTPS 支持，集成 OpenSSL
-- 动态线程池，支持扩容、空闲线程回收、任务调度优化
-- MySQL 连接池复用、空闲检测、自动重连
-- 最小堆连接超时管理
-- 环形缓冲区读写，减少拷贝
+- 动态线程池：支持扩容、优先级调度、空闲线程回收
+- MySQL 连接池：连接复用、空闲检测、自动重连
+- 最小堆定时器：管理空闲/超时连接
+- 环形缓冲区 + 内存池：降低频繁分配和拷贝
 - 异步日志、日志分级、日志滚动
 - 配置文件驱动运行参数
-- 守护进程模式、后台运行、信号处理、异常重启
+- 守护进程模式、后台运行、信号处理、异常拉起
+
+## 适合写进简历/GitHub 的点
+
+- 将原始 TinyWebServer 从“半同步半反应堆”升级为主从 Reactor / Multi-Reactor
+- 将 `LT` 改为 `ET`，补齐 ET 模式下的读写边界处理
+- 引入 `sendfile`、最小堆定时器、动态线程池、异步日志
+- 增加 HTTPS、配置文件、守护进程、中间件链和 API 路由
+- 保留原始静态页面能力，同时补充接口化访问方式
 
 ## 架构概览
 
-当前版本的主要执行路径如下：
+主要执行路径如下：
 
 1. `main.cpp` 负责配置加载、环境变量覆盖、守护进程/信号处理、服务启动
 2. 主 Reactor 负责监听 `listenfd` 并接收新连接
 3. 新连接按轮询分发到多个 SubReactor
-4. SubReactor 负责连接读写事件、连接超时扫描
-5. 业务解析与响应处理由线程池协同完成
-6. HTTP 明文连接保留 `sendfile` 零拷贝发送
-7. HTTPS 连接自动切换为 `SSL_read / SSL_write`
+4. SubReactor 负责连接读写事件、TLS 握手推进和超时扫描
+5. 业务解析与响应处理交给动态线程池协同完成
+6. HTTP 明文静态文件走 `sendfile`
+7. HTTPS 请求自动切换为 `SSL_read / SSL_write`
 
-## 已完成的增强项
+## 功能增强清单
 
 - 从半同步半反应堆升级为主从 Reactor / Multi-Reactor
 - 线程池优化：动态扩容、空闲线程回收
@@ -100,6 +116,12 @@ docker compose up --build
 http://127.0.0.1:9006/
 ```
 
+推荐先验证：
+
+```bash
+curl -I http://127.0.0.1:9006/
+```
+
 ### 2. 本地编译
 
 确保本机已经安装：
@@ -114,6 +136,16 @@ http://127.0.0.1:9006/
 make server
 ./server -f server.conf
 ```
+
+## 技术栈
+
+- 语言：C++
+- 平台：Linux
+- IO 多路复用：`epoll`
+- 并发模型：Main-Reactor + Multi-SubReactor
+- 数据库：MySQL
+- TLS：OpenSSL
+- 构建方式：`make` / Docker Compose
 
 ## 配置文件
 
@@ -142,6 +174,7 @@ pid_file=./TinyWebServer.pid
 https_enable=0
 https_cert_file=./certs/server.crt
 https_key_file=./certs/server.key
+auth_token=tinywebserver-secret
 db_host=127.0.0.1
 db_port=3306
 db_user=root
@@ -167,6 +200,7 @@ db_name=qgydb
 - `https_enable`：是否启用 HTTPS
 - `https_cert_file`：证书路径
 - `https_key_file`：私钥路径
+- `auth_token`：API 鉴权 token
 
 ## 命令行参数
 
@@ -247,6 +281,247 @@ curl -k https://127.0.0.1:9006/
 
 - HTTP 明文静态文件发送仍走 `sendfile`
 - HTTPS 连接因 TLS 加密限制，自动回退到 `SSL_write` 分块发送
+
+## 路由分发
+
+当前版本已经把请求处理从散落的 `if/else` 判断整理为统一的“方法 + 路径”分发表，路由入口会先做请求体解析，再根据请求方法和 URL 分发到对应处理逻辑。
+
+当前内置路由包括：
+
+- `POST /api/login`
+- `POST /api/register`
+- `POST /api/echo`
+- `GET /api/private/ping`
+- `POST /2`
+- `POST /3`
+- `GET /0`
+- `GET /1`
+- `GET /5`
+- `GET /6`
+- `GET /7`
+
+其中：
+
+- `/2`、`/3` 兼容原始页面登录/注册逻辑
+- `/api/*` 用于 JSON / 表单接口测试
+- `/0`、`/1`、`/5`、`/6`、`/7` 是静态页面快捷入口
+
+这套结构后续可以继续扩展为：
+
+- 更多 REST 风格接口
+- 方法级权限控制
+- 中间件式鉴权/日志处理
+- 路由参数提取
+
+## 中间件链
+
+当前已经引入基础中间件链，执行顺序为：
+
+1. 请求日志中间件
+2. 鉴权中间件
+3. 路由处理
+4. 统一异常/错误响应格式化
+
+当前已实现：
+
+- 请求日志：记录 `method + path + content_type + content_length`
+- 统一鉴权：拦截 `/api/private/*`、`/api/admin/*`
+- 统一异常响应：API 请求错误自动转为 JSON
+
+### 鉴权规则
+
+默认 token 在配置文件中定义：
+
+```ini
+auth_token=tinywebserver-secret
+```
+
+请求时通过 Header 传递：
+
+```http
+Authorization: Bearer tinywebserver-secret
+```
+
+### 受保护接口示例
+
+未携带 token：
+
+```bash
+curl http://127.0.0.1:9006/api/private/ping
+```
+
+返回：
+
+```json
+{"code":401,"message":"unauthorized"}
+```
+
+携带 token：
+
+```bash
+curl http://127.0.0.1:9006/api/private/ping \
+  -H "Authorization: Bearer tinywebserver-secret"
+```
+
+返回：
+
+```json
+{"code":0,"message":"pong"}
+```
+
+## API 示例
+
+### 1. 登录接口
+
+表单方式：
+
+```bash
+curl -X POST http://127.0.0.1:9006/api/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=test&passwd=123456"
+```
+
+JSON 方式：
+
+```bash
+curl -X POST http://127.0.0.1:9006/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"test","passwd":"123456"}'
+```
+
+成功响应示例：
+
+```json
+{"code":0,"message":"login success","target":"/welcome.html"}
+```
+
+### 2. 注册接口
+
+```bash
+curl -X POST http://127.0.0.1:9006/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"new_user","passwd":"123456"}'
+```
+
+成功响应示例：
+
+```json
+{"code":0,"message":"register success"}
+```
+
+### 3. 回显接口
+
+```bash
+curl -X POST http://127.0.0.1:9006/api/echo \
+  -H "Content-Type: application/json" \
+  -d '{"hello":"world"}'
+```
+
+响应示例：
+
+```json
+{"code":0,"content_type":"application/json","body":"{\"hello\":\"world\"}"}
+```
+
+## 性能优化与项目演进
+
+这一版改造不是单点功能堆叠，而是围绕“并发能力、连接稳定性、数据传输效率、工程可运维性”四条主线推进。
+
+### 1. 并发模型升级
+
+原始实现以“半同步半反应堆”为主，结构更偏教学型。当前版本将连接接入与连接处理拆分为 `Main-Reactor + Multi-SubReactor`：
+
+- 主 Reactor 专注 `accept`
+- 多个 SubReactor 分担连接事件
+- 业务逻辑由动态线程池异步处理
+
+这样做的直接收益：
+
+- 降低单 Reactor 在高并发连接下的事件分发压力
+- 让连接接入、IO 处理、业务执行三类职责边界更清晰
+- 更适合继续演进为多核场景下的高并发服务端模型
+
+### 2. IO 模型优化
+
+事件触发模式从 `LT` 切换为 `ET`，并补齐 ET 模式下的“一次性读满直到 `EAGAIN`”处理逻辑，同时修复原生 `EAGAIN` 处理不完整的问题。
+
+这部分优化的意义在于：
+
+- 减少重复事件通知带来的额外开销
+- 避免 ET 模式下因为未读空缓冲区而导致连接假死
+- 提升高并发下连接处理的稳定性
+
+### 3. 连接生命周期治理
+
+围绕长连接和超时连接，补充了两类关键能力：
+
+- HTTP/1.1 `Keep-Alive`
+- 基于最小堆的连接超时管理
+
+收益主要体现在：
+
+- 减少频繁建连/断连的系统调用成本
+- 更及时地回收空闲或异常连接
+- 让服务在大量短连接和空闲连接混合场景下更稳定
+
+### 4. 传输链路优化
+
+静态文件在 HTTP 明文场景下使用 `sendfile`，避免用户态和内核态之间不必要的数据搬运；HTTPS 场景下则根据 TLS 加密要求回退为 `SSL_write` 分块发送。
+
+这部分设计的价值是：
+
+- 明文静态文件请求具备更高的传输效率
+- HTTPS 场景保持兼容性和正确性
+- 让“性能优化”和“协议正确性”两者不互相冲突
+
+### 5. 线程池与资源池优化
+
+线程池不再是固定规模，而是支持：
+
+- 动态扩容
+- 任务优先级调度
+- 空闲线程回收
+
+同时数据库侧补充了 MySQL 连接池复用、空闲检测、自动重连。
+
+这类优化的核心收益：
+
+- 在请求高峰时按需拉起更多执行资源
+- 在低负载时回收空闲线程，避免长期空转
+- 降低数据库连接反复创建带来的成本和失败概率
+
+### 6. 内存与缓冲区优化
+
+针对高频读写路径，引入了内存池和环形缓冲区，目标是减少频繁 `malloc/free` 和不必要的数据拷贝。
+
+这部分适合在项目描述中强调为：
+
+- 针对热点路径做内存分配优化
+- 通过环形缓冲区提升收发数据处理效率
+- 为后续更高吞吐场景预留扩展空间
+
+### 7. 工程可运维性增强
+
+除了网络和性能层面的改造，这个项目还补齐了实际运行所需的工程能力：
+
+- 异步日志、日志分级、日志滚动
+- 配置文件读取与环境变量覆盖
+- 守护进程模式、PID 文件、控制脚本
+- 信号处理、异常退出后的拉起机制
+- HTTPS 证书接入能力
+
+这意味着该项目已经不只是“能跑起来”的实验代码，而是具备了更完整的部署、管理和展示价值。
+
+### 8. 适合简历的表述方式
+
+如果你要把这个项目写进简历，可以直接提炼成下面这种风格：
+
+- 基于 C++/Linux 实现 Web 服务器，并将原始 TinyWebServer 从半同步半反应堆升级为 `Main-Reactor + Multi-SubReactor`
+- 基于 `epoll ET` 改造连接处理流程，补齐 `EAGAIN` 边界处理与 ET 模式读满机制，优化高并发下的事件处理效率
+- 实现 `Keep-Alive`、最小堆超时管理、动态线程池、MySQL 连接池复用，提升连接稳定性与资源利用率
+- 在 HTTP 场景下引入 `sendfile` 零拷贝传输，并补充 HTTPS、配置化运行、异步日志、守护进程和 API 路由能力
+
+如果你要把它写进 GitHub 项目简介，更适合强调“从教学项目到工程化演进”的脉络，而不是只列功能点。
 
 ## MySQL 初始化
 

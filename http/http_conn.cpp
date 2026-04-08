@@ -23,6 +23,41 @@ locker m_lock;
 map<string, string> users;
 SSL_CTX *http_conn::m_ssl_ctx = NULL;
 bool http_conn::m_tls_enabled = false;
+string http_conn::m_auth_token = "tinywebserver-secret";
+
+namespace
+{
+bool starts_with_ignore_case(const char *text, const char *prefix)
+{
+    return strncasecmp(text, prefix, strlen(prefix)) == 0;
+}
+
+struct RouteEntry
+{
+    http_conn::METHOD method;
+    const char *path;
+    http_conn::RouteHandler handler;
+};
+
+const RouteEntry g_routes[] = {
+    {http_conn::POST, "/api/login", &http_conn::route_api_login},
+    {http_conn::POST, "/api/register", &http_conn::route_api_register},
+    {http_conn::POST, "/api/echo", &http_conn::route_api_echo},
+    {http_conn::GET, "/api/private/ping", &http_conn::route_api_private_ping},
+    {http_conn::POST, "/2", &http_conn::route_page_login},
+    {http_conn::POST, "/3", &http_conn::route_page_register},
+    {http_conn::GET, "/0", &http_conn::route_register_page},
+    {http_conn::GET, "/1", &http_conn::route_login_page},
+    {http_conn::GET, "/5", &http_conn::route_picture_page},
+    {http_conn::GET, "/6", &http_conn::route_video_page},
+    {http_conn::GET, "/7", &http_conn::route_fans_page},
+    {http_conn::HEAD, "/0", &http_conn::route_register_page},
+    {http_conn::HEAD, "/1", &http_conn::route_login_page},
+    {http_conn::HEAD, "/5", &http_conn::route_picture_page},
+    {http_conn::HEAD, "/6", &http_conn::route_video_page},
+    {http_conn::HEAD, "/7", &http_conn::route_fans_page},
+};
+}
 
 void http_conn::initmysql_result(connection_pool *connPool)
 {
@@ -107,6 +142,11 @@ void http_conn::configure_tls(SSL_CTX *ssl_ctx, bool https_enabled)
 {
     m_ssl_ctx = ssl_ctx;
     m_tls_enabled = https_enabled && ssl_ctx != NULL;
+}
+
+void http_conn::set_auth_token(const string &auth_token)
+{
+    m_auth_token = auth_token;
 }
 
 //关闭连接，关闭一个连接，客户总量减一
@@ -461,6 +501,12 @@ void http_conn::init()
     m_state = 0;
     timer_flag = 0;
     improv = 0;
+    m_response_status = 200;
+    m_request_body.clear();
+    m_response_body_storage.clear();
+    m_form_data.clear();
+    m_json_data.clear();
+    m_authorization.clear();
 
     memset(m_read_ring_buf, '\0', READ_BUFFER_SIZE);
     memset(m_read_buf, '\0', READ_BUFFER_SIZE);
@@ -468,7 +514,11 @@ void http_conn::init()
     memset(m_write_buf, '\0', WRITE_BUFFER_SIZE);
     memset(m_real_file, '\0', FILENAME_LEN);
     memset(m_content_type, '\0', sizeof(m_content_type));
+    memset(m_response_content_type, '\0', sizeof(m_response_content_type));
+    memset(m_response_status_title, '\0', sizeof(m_response_status_title));
     memset(m_file_send_buf, '\0', sizeof(m_file_send_buf));
+    strncpy(m_response_content_type, "text/html", sizeof(m_response_content_type) - 1);
+    strncpy(m_response_status_title, ok_200_title, sizeof(m_response_status_title) - 1);
     reset_ring_buffer(m_read_ring, m_read_ring_buf, READ_BUFFER_SIZE);
     reset_ring_buffer(m_write_ring, m_write_ring_buf, WRITE_BUFFER_SIZE);
 }
@@ -772,6 +822,12 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text)
             m_chunked = true;
         }
     }
+    else if (strncasecmp(text, "Authorization:", 14) == 0)
+    {
+        text += 14;
+        text += strspn(text, " \t");
+        m_authorization = text;
+    }
     else
     {
         LOG_INFO("oop!unknow header: %s", text);
@@ -789,11 +845,343 @@ http_conn::HTTP_CODE http_conn::parse_content(char *text)
     if (m_read_idx >= (m_content_length + m_checked_idx))
     {
         text[m_content_length] = '\0';
-        //POST请求中最后为输入的用户名和密码
-        m_string = text;
+        m_request_body.assign(text, m_content_length);
         return GET_REQUEST;
     }
     return NO_REQUEST;
+}
+
+bool http_conn::parse_post_body()
+{
+    m_form_data.clear();
+    m_json_data.clear();
+
+    if (m_request_body.empty())
+    {
+        return true;
+    }
+
+    if (starts_with_ignore_case(m_content_type, "application/x-www-form-urlencoded"))
+    {
+        return parse_form_urlencoded(m_request_body);
+    }
+
+    if (starts_with_ignore_case(m_content_type, "application/json"))
+    {
+        return parse_json_body(m_request_body);
+    }
+
+    return true;
+}
+
+bool http_conn::parse_form_urlencoded(const string &body)
+{
+    size_t start = 0;
+    while (start <= body.size())
+    {
+        size_t end = body.find('&', start);
+        string item = body.substr(start, end == string::npos ? string::npos : end - start);
+        if (!item.empty())
+        {
+            size_t eq = item.find('=');
+            string key = url_decode(item.substr(0, eq));
+            string value = eq == string::npos ? "" : url_decode(item.substr(eq + 1));
+            if (!key.empty())
+            {
+                m_form_data[key] = value;
+            }
+        }
+
+        if (end == string::npos)
+        {
+            break;
+        }
+        start = end + 1;
+    }
+    return true;
+}
+
+bool http_conn::parse_json_body(const string &body)
+{
+    string text = trim_copy(body);
+    if (text.empty())
+    {
+        return true;
+    }
+    if (text.size() < 2 || text[0] != '{' || text[text.size() - 1] != '}')
+    {
+        return false;
+    }
+
+    size_t pos = 1;
+    while (pos < text.size() - 1)
+    {
+        while (pos < text.size() - 1 && isspace((unsigned char)text[pos]))
+        {
+            ++pos;
+        }
+        if (pos >= text.size() - 1)
+        {
+            break;
+        }
+        if (text[pos] == ',')
+        {
+            ++pos;
+            continue;
+        }
+        if (text[pos] != '"')
+        {
+            return false;
+        }
+
+        ++pos;
+        string key;
+        while (pos < text.size() - 1)
+        {
+            if (text[pos] == '\\')
+            {
+                ++pos;
+                if (pos >= text.size() - 1)
+                {
+                    return false;
+                }
+            }
+            else if (text[pos] == '"')
+            {
+                break;
+            }
+            key.push_back(text[pos]);
+            ++pos;
+        }
+        if (pos >= text.size() - 1 || text[pos] != '"')
+        {
+            return false;
+        }
+        ++pos;
+
+        while (pos < text.size() - 1 && isspace((unsigned char)text[pos]))
+        {
+            ++pos;
+        }
+        if (pos >= text.size() - 1 || text[pos] != ':')
+        {
+            return false;
+        }
+        ++pos;
+        while (pos < text.size() - 1 && isspace((unsigned char)text[pos]))
+        {
+            ++pos;
+        }
+        if (pos >= text.size() - 1)
+        {
+            return false;
+        }
+
+        string value;
+        if (text[pos] == '"')
+        {
+            ++pos;
+            while (pos < text.size() - 1)
+            {
+                if (text[pos] == '\\')
+                {
+                    ++pos;
+                    if (pos >= text.size() - 1)
+                    {
+                        return false;
+                    }
+                }
+                else if (text[pos] == '"')
+                {
+                    break;
+                }
+                value.push_back(text[pos]);
+                ++pos;
+            }
+            if (pos >= text.size() - 1 || text[pos] != '"')
+            {
+                return false;
+            }
+            ++pos;
+        }
+        else
+        {
+            size_t value_start = pos;
+            while (pos < text.size() - 1 && text[pos] != ',' && text[pos] != '}')
+            {
+                ++pos;
+            }
+            value = trim_copy(text.substr(value_start, pos - value_start));
+        }
+
+        if (!key.empty())
+        {
+            m_json_data[key] = value;
+        }
+
+        while (pos < text.size() - 1 && isspace((unsigned char)text[pos]))
+        {
+            ++pos;
+        }
+        if (pos < text.size() - 1 && text[pos] == ',')
+        {
+            ++pos;
+        }
+    }
+
+    return true;
+}
+
+string http_conn::url_decode(const string &value) const
+{
+    string decoded;
+    decoded.reserve(value.size());
+    for (size_t i = 0; i < value.size(); ++i)
+    {
+        if (value[i] == '+')
+        {
+            decoded.push_back(' ');
+        }
+        else if (value[i] == '%' && i + 2 < value.size())
+        {
+            char high = value[i + 1];
+            char low = value[i + 2];
+            if (isxdigit((unsigned char)high) && isxdigit((unsigned char)low))
+            {
+                char hex[3] = {high, low, '\0'};
+                decoded.push_back((char)strtol(hex, NULL, 16));
+                i += 2;
+            }
+            else
+            {
+                decoded.push_back(value[i]);
+            }
+        }
+        else
+        {
+            decoded.push_back(value[i]);
+        }
+    }
+    return decoded;
+}
+
+string http_conn::trim_copy(const string &value) const
+{
+    size_t start = 0;
+    while (start < value.size() && isspace((unsigned char)value[start]))
+    {
+        ++start;
+    }
+    size_t end = value.size();
+    while (end > start && isspace((unsigned char)value[end - 1]))
+    {
+        --end;
+    }
+    return value.substr(start, end - start);
+}
+
+string http_conn::json_escape(const string &value) const
+{
+    string escaped;
+    escaped.reserve(value.size());
+    for (size_t i = 0; i < value.size(); ++i)
+    {
+        switch (value[i])
+        {
+        case '\\':
+            escaped += "\\\\";
+            break;
+        case '"':
+            escaped += "\\\"";
+            break;
+        case '\n':
+            escaped += "\\n";
+            break;
+        case '\r':
+            escaped += "\\r";
+            break;
+        case '\t':
+            escaped += "\\t";
+            break;
+        default:
+            escaped.push_back(value[i]);
+            break;
+        }
+    }
+    return escaped;
+}
+
+string http_conn::request_value(const string &primary, const string &fallback) const
+{
+    map<string, string>::const_iterator form_it = m_form_data.find(primary);
+    if (form_it != m_form_data.end())
+    {
+        return form_it->second;
+    }
+
+    map<string, string>::const_iterator json_it = m_json_data.find(primary);
+    if (json_it != m_json_data.end())
+    {
+        return json_it->second;
+    }
+
+    if (!fallback.empty())
+    {
+        form_it = m_form_data.find(fallback);
+        if (form_it != m_form_data.end())
+        {
+            return form_it->second;
+        }
+
+        json_it = m_json_data.find(fallback);
+        if (json_it != m_json_data.end())
+        {
+            return json_it->second;
+        }
+    }
+
+    return "";
+}
+
+const char *http_conn::method_name() const
+{
+    switch (m_method)
+    {
+    case GET: return "GET";
+    case POST: return "POST";
+    case HEAD: return "HEAD";
+    case PUT: return "PUT";
+    case DELETE: return "DELETE";
+    case TRACE: return "TRACE";
+    case OPTIONS: return "OPTIONS";
+    case CONNECT: return "CONNECT";
+    case PATH: return "PATCH";
+    default: return "UNKNOWN";
+    }
+}
+
+bool http_conn::is_api_request() const
+{
+    return m_url != NULL && starts_with_ignore_case(m_url, "/api/");
+}
+
+bool http_conn::requires_auth() const
+{
+    if (m_url == NULL)
+    {
+        return false;
+    }
+    return starts_with_ignore_case(m_url, "/api/private/") || starts_with_ignore_case(m_url, "/api/admin/");
+}
+
+void http_conn::set_memory_response(int status, const char *title, const string &body, const char *content_type)
+{
+    m_response_status = status;
+    strncpy(m_response_status_title, title, sizeof(m_response_status_title) - 1);
+    strncpy(m_response_content_type, content_type, sizeof(m_response_content_type) - 1);
+    m_response_body_storage = body;
+    m_response_body = m_response_body_storage.c_str();
+    m_response_body_len = m_response_body_storage.size();
 }
 
 http_conn::HTTP_CODE http_conn::process_read()
@@ -858,114 +1246,196 @@ http_conn::HTTP_CODE http_conn::do_request()
         return NOT_IMPLEMENTED;
     }
 
-    strcpy(m_real_file, doc_root);
-    int len = strlen(doc_root);
-    //printf("m_url:%s\n", m_url);
-    const char *p = strrchr(m_url, '/');
-
-    //处理cgi
-    if (cgi == 1 && (*(p + 1) == '2' || *(p + 1) == '3'))
+    if (m_method == POST)
     {
-
-        //根据标志判断是登录检测还是注册检测
-        char flag = m_url[1];
-
-        MemoryPoolBuffer url_real_buffer;
-        char *m_url_real = url_real_buffer.get();
-        strcpy(m_url_real, "/");
-        strcat(m_url_real, m_url + 2);
-        strncpy(m_real_file + len, m_url_real, FILENAME_LEN - len - 1);
-
-        //将用户名和密码提取出来
-        //user=123&passwd=123
-        char name[100], password[100];
-        int i;
-        for (i = 5; m_string[i] != '&'; ++i)
-            name[i - 5] = m_string[i];
-        name[i - 5] = '\0';
-
-        int j = 0;
-        for (i = i + 10; m_string[i] != '\0'; ++i, ++j)
-            password[j] = m_string[i];
-        password[j] = '\0';
-
-        if (*(p + 1) == '3')
+        if (!parse_post_body())
         {
-            //如果是注册，先检测数据库中是否有重名的
-            //没有重名的，进行增加数据
-            MemoryPoolBuffer sql_insert_buffer;
-            char *sql_insert = sql_insert_buffer.get();
-            strcpy(sql_insert, "INSERT INTO user(username, passwd) VALUES(");
-            strcat(sql_insert, "'");
-            strcat(sql_insert, name);
-            strcat(sql_insert, "', '");
-            strcat(sql_insert, password);
-            strcat(sql_insert, "')");
-
-            if (users.find(name) == users.end())
-            {
-                m_lock.lock();
-                int res = mysql_query(mysql, sql_insert);
-                users.insert(pair<string, string>(name, password));
-                m_lock.unlock();
-
-                if (!res)
-                    strcpy(m_url, "/log.html");
-                else
-                    strcpy(m_url, "/registerError.html");
-            }
-            else
-                strcpy(m_url, "/registerError.html");
-        }
-        //如果是登录，直接判断
-        //若浏览器端输入的用户名和密码在表中可以查找到，返回1，否则返回0
-        else if (*(p + 1) == '2')
-        {
-            if (users.find(name) != users.end() && users[name] == password)
-                strcpy(m_url, "/welcome.html");
-            else
-                strcpy(m_url, "/logError.html");
+            return BAD_REQUEST;
         }
     }
 
-    if (*(p + 1) == '0')
+    HTTP_CODE middleware_code = run_before_middlewares();
+    if (middleware_code != NO_REQUEST)
     {
-        MemoryPoolBuffer url_real_buffer;
-        char *m_url_real = url_real_buffer.get();
-        strcpy(m_url_real, "/register.html");
-        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+        return middleware_code;
     }
-    else if (*(p + 1) == '1')
-    {
-        MemoryPoolBuffer url_real_buffer;
-        char *m_url_real = url_real_buffer.get();
-        strcpy(m_url_real, "/log.html");
-        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
-    }
-    else if (*(p + 1) == '5')
-    {
-        MemoryPoolBuffer url_real_buffer;
-        char *m_url_real = url_real_buffer.get();
-        strcpy(m_url_real, "/picture.html");
-        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
-    }
-    else if (*(p + 1) == '6')
-    {
-        MemoryPoolBuffer url_real_buffer;
-        char *m_url_real = url_real_buffer.get();
-        strcpy(m_url_real, "/video.html");
-        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
-    }
-    else if (*(p + 1) == '7')
-    {
-        MemoryPoolBuffer url_real_buffer;
-        char *m_url_real = url_real_buffer.get();
-        strcpy(m_url_real, "/fans.html");
-        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
-    }
-    else
-        strncpy(m_real_file + len, m_url, FILENAME_LEN - len - 1);
 
+    return run_after_middlewares(route_request());
+}
+
+http_conn::HTTP_CODE http_conn::run_before_middlewares()
+{
+    HTTP_CODE code = middleware_request_log();
+    if (code != NO_REQUEST)
+    {
+        return code;
+    }
+    return middleware_auth();
+}
+
+http_conn::HTTP_CODE http_conn::run_after_middlewares(HTTP_CODE code)
+{
+    if (!is_api_request())
+    {
+        return code;
+    }
+
+    if (code == MEMORY_REQUEST || code == FILE_REQUEST || code == OPTIONS_REQUEST)
+    {
+        return code;
+    }
+
+    int status = 500;
+    const char *title = error_500_title;
+    const char *message = "internal server error";
+    if (code == BAD_REQUEST)
+    {
+        status = 400;
+        title = error_400_title;
+        message = "bad request";
+    }
+    else if (code == NO_RESOURCE)
+    {
+        status = 404;
+        title = error_404_title;
+        message = "resource not found";
+    }
+    else if (code == FORBIDDEN_REQUEST)
+    {
+        status = 403;
+        title = error_403_title;
+        message = "forbidden";
+    }
+    else if (code == NOT_IMPLEMENTED)
+    {
+        status = 501;
+        title = error_501_title;
+        message = "not implemented";
+    }
+
+    char body[128];
+    snprintf(body, sizeof(body), "{\"code\":%d,\"message\":\"%s\"}", status, message);
+    set_memory_response(status, title, body, "application/json");
+    return MEMORY_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::middleware_request_log()
+{
+    if (0 == m_close_log)
+    {
+        Log::get_instance()->write_log(1, "request %s %s content_type=%s content_length=%ld",
+                                       method_name(), m_url ? m_url : "",
+                                       m_content_type[0] ? m_content_type : "-",
+                                       m_content_length);
+    }
+    return NO_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::middleware_auth()
+{
+    if (!requires_auth())
+    {
+        return NO_REQUEST;
+    }
+    if (m_authorization == string("Bearer ") + m_auth_token)
+    {
+        return NO_REQUEST;
+    }
+
+    set_memory_response(401, "Unauthorized",
+                        "{\"code\":401,\"message\":\"unauthorized\"}",
+                        "application/json");
+    return MEMORY_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::route_request()
+{
+    for (size_t i = 0; i < sizeof(g_routes) / sizeof(g_routes[0]); ++i)
+    {
+        if (g_routes[i].method == m_method && strcasecmp(m_url, g_routes[i].path) == 0)
+        {
+            return (this->*g_routes[i].handler)();
+        }
+    }
+
+    if (starts_with_ignore_case(m_url, "/api/"))
+    {
+        return handle_api_request();
+    }
+
+    return handle_static_route();
+}
+
+http_conn::HTTP_CODE http_conn::route_api_login()
+{
+    return handle_auth_request(false, true);
+}
+
+http_conn::HTTP_CODE http_conn::route_api_register()
+{
+    return handle_auth_request(true, true);
+}
+
+http_conn::HTTP_CODE http_conn::route_api_echo()
+{
+    return handle_api_request();
+}
+
+http_conn::HTTP_CODE http_conn::route_api_private_ping()
+{
+    set_memory_response(200, ok_200_title,
+                        "{\"code\":0,\"message\":\"pong\"}",
+                        "application/json");
+    return MEMORY_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::route_page_login()
+{
+    return handle_auth_request(false, false);
+}
+
+http_conn::HTTP_CODE http_conn::route_page_register()
+{
+    return handle_auth_request(true, false);
+}
+
+http_conn::HTTP_CODE http_conn::route_register_page()
+{
+    return resolve_static_path("/register.html") ? open_static_file() : BAD_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::route_login_page()
+{
+    return resolve_static_path("/log.html") ? open_static_file() : BAD_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::route_picture_page()
+{
+    return resolve_static_path("/picture.html") ? open_static_file() : BAD_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::route_video_page()
+{
+    return resolve_static_path("/video.html") ? open_static_file() : BAD_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::route_fans_page()
+{
+    return resolve_static_path("/fans.html") ? open_static_file() : BAD_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::handle_static_route()
+{
+    if (!resolve_static_path(m_url))
+    {
+        return BAD_REQUEST;
+    }
+
+    return open_static_file();
+}
+
+http_conn::HTTP_CODE http_conn::open_static_file()
+{
     if (stat(m_real_file, &m_file_stat) < 0)
         return NO_RESOURCE;
 
@@ -979,6 +1449,149 @@ http_conn::HTTP_CODE http_conn::do_request()
     if (m_filefd < 0)
         return NO_RESOURCE;
     return FILE_REQUEST;
+}
+
+bool http_conn::resolve_static_path(const char *route_path)
+{
+    const char *target = route_path;
+
+    if (strcmp(route_path, "/0") == 0)
+    {
+        target = "/register.html";
+    }
+    else if (strcmp(route_path, "/1") == 0)
+    {
+        target = "/log.html";
+    }
+    else if (strcmp(route_path, "/5") == 0)
+    {
+        target = "/picture.html";
+    }
+    else if (strcmp(route_path, "/6") == 0)
+    {
+        target = "/video.html";
+    }
+    else if (strcmp(route_path, "/7") == 0)
+    {
+        target = "/fans.html";
+    }
+
+    if (target == NULL || target[0] != '/')
+    {
+        return false;
+    }
+
+    strcpy(m_real_file, doc_root);
+    strncpy(m_real_file + strlen(doc_root), target, FILENAME_LEN - (int)strlen(doc_root) - 1);
+    m_real_file[FILENAME_LEN - 1] = '\0';
+    return true;
+}
+
+http_conn::HTTP_CODE http_conn::handle_api_request()
+{
+    if (strcasecmp(m_url, "/api/login") == 0)
+    {
+        return handle_auth_request(false, true);
+    }
+
+    if (strcasecmp(m_url, "/api/register") == 0)
+    {
+        return handle_auth_request(true, true);
+    }
+
+    if (strcasecmp(m_url, "/api/echo") == 0)
+    {
+        string response = "{\"code\":0,\"content_type\":\"" + json_escape(m_content_type) +
+                          "\",\"body\":\"" + json_escape(m_request_body) + "\"}";
+        set_memory_response(200, ok_200_title, response, "application/json");
+        return MEMORY_REQUEST;
+    }
+
+    string response = "{\"code\":404,\"message\":\"api not found\"}";
+    set_memory_response(404, error_404_title, response, "application/json");
+    return MEMORY_REQUEST;
+}
+
+http_conn::HTTP_CODE http_conn::handle_auth_request(bool is_register, bool api_mode)
+{
+    string name = request_value("username", "user");
+    string password = request_value("passwd", "password");
+    if (name.empty() || password.empty())
+    {
+        if (api_mode)
+        {
+            set_memory_response(400, error_400_title,
+                                "{\"code\":400,\"message\":\"username or password is empty\"}",
+                                "application/json");
+            return MEMORY_REQUEST;
+        }
+        return BAD_REQUEST;
+    }
+
+    bool success = false;
+    if (is_register)
+    {
+        MemoryPoolBuffer sql_insert_buffer;
+        char *sql_insert = sql_insert_buffer.get();
+        strcpy(sql_insert, "INSERT INTO user(username, passwd) VALUES(");
+        strcat(sql_insert, "'");
+        strcat(sql_insert, name.c_str());
+        strcat(sql_insert, "', '");
+        strcat(sql_insert, password.c_str());
+        strcat(sql_insert, "')");
+
+        if (users.find(name) == users.end())
+        {
+            m_lock.lock();
+            int res = mysql_query(mysql, sql_insert);
+            if (!res)
+            {
+                users.insert(pair<string, string>(name, password));
+                success = true;
+            }
+            m_lock.unlock();
+        }
+
+        if (api_mode)
+        {
+            if (success)
+            {
+                set_memory_response(200, ok_200_title,
+                                    "{\"code\":0,\"message\":\"register success\"}",
+                                    "application/json");
+            }
+            else
+            {
+                set_memory_response(409, "Conflict",
+                                    "{\"code\":409,\"message\":\"register failed\"}",
+                                    "application/json");
+            }
+            return MEMORY_REQUEST;
+        }
+
+        strcpy(m_url, success ? "/log.html" : "/registerError.html");
+        return do_request();
+    }
+
+    success = users.find(name) != users.end() && users[name] == password;
+    if (api_mode)
+    {
+        if (success)
+        {
+            string response = "{\"code\":0,\"message\":\"login success\",\"target\":\"/welcome.html\"}";
+            set_memory_response(200, ok_200_title, response, "application/json");
+        }
+        else
+        {
+            set_memory_response(401, "Unauthorized",
+                                "{\"code\":401,\"message\":\"login failed\"}",
+                                "application/json");
+        }
+        return MEMORY_REQUEST;
+    }
+
+    strcpy(m_url, success ? "/welcome.html" : "/logError.html");
+    return do_request();
 }
 
 void http_conn::close_file()
@@ -1222,6 +1835,19 @@ bool http_conn::process_write(HTTP_CODE ret)
     {
         add_status_line(204, ok_200_title);
         add_headers(0, "text/plain");
+        bytes_to_send = m_write_idx;
+        m_header_bytes_sent = 0;
+        m_file_offset = 0;
+        return true;
+    }
+    case MEMORY_REQUEST:
+    {
+        add_status_line(m_response_status, m_response_status_title);
+        add_headers(m_response_body_len, m_response_content_type);
+        if (m_response_body_len > 0 && !add_content(m_response_body))
+        {
+            return false;
+        }
         bytes_to_send = m_write_idx;
         m_header_bytes_sent = 0;
         m_file_offset = 0;

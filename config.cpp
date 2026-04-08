@@ -57,6 +57,7 @@ Config::Config(){
     https_enable = 0;
     https_cert_file = "./certs/server.crt";
     https_key_file = "./certs/server.key";
+    auth_token = "tinywebserver-secret";
 
     db_host = "127.0.0.1";
     db_port = 3306;
@@ -117,6 +118,7 @@ void Config::load_file(const char *path)
         else if (key == "https_enable") https_enable = atoi(value.c_str());
         else if (key == "https_cert_file") https_cert_file = value;
         else if (key == "https_key_file") https_key_file = value;
+        else if (key == "auth_token") auth_token = value;
         else if (key == "db_host") db_host = value;
         else if (key == "db_port") db_port = atoi(value.c_str());
         else if (key == "db_user") db_user = value;

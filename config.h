@@ -59,6 +59,7 @@ public:
     int https_enable;
     string https_cert_file;
     string https_key_file;
+    string auth_token;
 
     //数据库配置
     string db_host;

@@ -42,7 +42,8 @@ public:
               int thread_num, int threadpool_max_threads, int threadpool_idle_timeout,
               int mysql_idle_timeout, int conn_timeout,
               int close_log, int actor_model, int log_level, int log_split_lines, int log_queue_size,
-              int https_enable, const string &https_cert_file, const string &https_key_file);
+              int https_enable, const string &https_cert_file, const string &https_key_file,
+              const string &auth_token);
 
     void thread_pool();
     void sql_pool();
@@ -118,6 +119,7 @@ public:
     int m_https_enable;
     string m_https_cert_file;
     string m_https_key_file;
+    string m_auth_token;
     SSL_CTX *m_ssl_ctx;
 
     int m_epollfd;

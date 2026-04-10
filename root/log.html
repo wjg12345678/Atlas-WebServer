@@ -1,21 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
     <head>
         <meta charset="UTF-8">
-        <title>Sign in</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Atlas WebServer Login</title>
+        <link rel="stylesheet" href="./atlas.css">
     </head>
     <body>
-<br/>
-<br/>
-    <div align="center"><font size="5"> <strong>登录</strong></font></div>
-    <br/>
-        <div class="login">
-                <form action="2CGISQL.cgi" method="post">
-                        <div align="center"><input type="text" name="user" placeholder="用户名" required="required"></div><br/>
-                        <div align="center"><input type="password" name="password" placeholder="登录密码" required="required"></div><br/>
-                        <div align="center"><button type="submit">确定</button></div>
-                </form>
+        <div class="shell">
+            <section class="grid two">
+                <article class="hero">
+                    <p class="eyebrow">Sign In</p>
+                    <h1>登录 Atlas WebServer</h1>
+                    <p>登录后可进入统一控制台，继续访问照片、视频和文件管理台。文件管理页会直接复用当前登录态。</p>
+                    <div class="center-actions">
+                        <a class="link-button secondary" href="./register.html">去注册</a>
+                        <a class="link-button secondary" href="./judge.html">返回入口</a>
+                    </div>
+                </article>
+
+                <article class="card">
+                    <p class="kicker">Account Access</p>
+                    <h2>账号登录</h2>
+                    <form class="stack" action="2CGISQL.cgi" method="post">
+                        <div>
+                            <label for="login-user">用户名</label>
+                            <input id="login-user" type="text" name="user" placeholder="请输入用户名" required="required">
+                        </div>
+                        <div>
+                            <label for="login-password">登录密码</label>
+                            <input id="login-password" type="password" name="password" placeholder="请输入密码" required="required">
+                        </div>
+                        <button type="submit">登录并进入控制台</button>
+                    </form>
+                    <div class="hint">支持页面登录流程，也支持调用 `/api/login` 进行接口验证。</div>
+                </article>
+            </section>
         </div>
     </body>
 </html>
-

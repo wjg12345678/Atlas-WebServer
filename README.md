@@ -1,294 +1,473 @@
-# WebServer
+# Atlas WebServer
 
-基于 C++ 的 Linux Web 服务器项目，重点覆盖了 Reactor 并发模型、HTTP/1.1 请求处理、静态文件传输、线程池、连接池、日志系统、配置化运行、守护进程和 HTTPS。
+一个基于 C++ / Linux / `epoll` 的工程化 Web 服务项目。
 
-当前版本已经从经典的“半同步半反应堆”演进为 `Main-Reactor + Multi-SubReactor`，并补齐了 `ET`、`Keep-Alive`、超时管理、异步日志、OpenSSL TLS、中间件链、基础 API 路由等能力，适合放进 GitHub 作为 Linux 网络编程/C++ 服务端项目展示。
+这是一个独立设计并实现的 C++ Web 服务项目，重点补齐了 `Main-Reactor + Multi-SubReactor`、线程池、连接池、超时治理、TLS、文件业务模块、鉴权、操作审计、Docker Compose、压测材料和成体系的 smoke test，适合作为秋招服务端 / C++ 后端 / Linux 网络编程项目展示。
 
-## 项目定位
+---
 
-- 展示 Linux 网络编程、`epoll`、Reactor、多线程协作
-- 展示 HTTP 服务端基础设施能力，而不只是页面 demo
-- 展示从课程型项目向工程化项目演进的思路
+## 目录
 
-## 核心特性
+- [项目概览](#项目概览)
+- [核心亮点](#核心亮点)
+- [效果预览](#效果预览)
+- [整体架构](#整体架构)
+- [模块设计](#模块设计)
+- [请求处理链路](#请求处理链路)
+- [文件业务模块](#文件业务模块)
+- [并发模型与资源治理](#并发模型与资源治理)
+- [部署与运行](#部署与运行)
+- [接口与页面](#接口与页面)
+- [测试与验证](#测试与验证)
+- [压测结果](#压测结果)
+- [项目结构](#项目结构)
+- [文档索引](#文档索引)
+- [简历写法](#简历写法)
+- [后续演进方向](#后续演进方向)
 
-- `Main-Reactor + Multi-SubReactor` 多反应堆模型
-- `epoll ET` 边缘触发，支持一次性读满直到 `EAGAIN`
-- HTTP/1.1 基础解析、长连接 `Keep-Alive`
-- 路由分发：按“方法 + 路径”分派请求
-- 中间件链：请求日志、统一鉴权、统一错误响应
-- `sendfile` 零拷贝发送静态文件
-- HTTPS 支持，集成 OpenSSL
-- 动态线程池：支持扩容、优先级调度、空闲线程回收
-- MySQL 连接池：连接复用、空闲检测、自动重连
-- 最小堆定时器：管理空闲/超时连接
-- 环形缓冲区 + 内存池：降低频繁分配和拷贝
-- 异步日志、日志分级、日志滚动
-- 配置文件驱动运行参数
-- 守护进程模式、后台运行、信号处理、异常拉起
+---
 
-## 适合写进简历/GitHub 的点
+## 项目概览
 
-- 将原始 TinyWebServer 从“半同步半反应堆”升级为主从 Reactor / Multi-Reactor
-- 将 `LT` 改为 `ET`，补齐 ET 模式下的读写边界处理
-- 引入 `sendfile`、最小堆定时器、动态线程池、异步日志
-- 增加 HTTPS、配置文件、守护进程、中间件链和 API 路由
-- 保留原始静态页面能力，同时补充接口化访问方式
+### 这是一个什么项目
 
-## 架构概览
+- 一个运行在 Linux 上的 C++ 高并发 Web 服务
+- 基于 `epoll` 的 Reactor 网络模型
+- 支持 HTTP/1.1、Keep-Alive、静态资源、基础 API、中间件链和 HTTPS
+- 内置一个完整的小文件业务闭环：用户注册登录、文件上传下载、权限控制、操作日志
+- 已补充 Docker 化部署、健康检查、压测结果、架构图、时序图和脚本化验证
 
-主要执行路径如下：
+### 适合展示什么能力
 
-1. `main.cpp` 负责配置加载、环境变量覆盖、守护进程/信号处理、服务启动
-2. 主 Reactor 负责监听 `listenfd` 并接收新连接
-3. 新连接按轮询分发到多个 SubReactor
-4. SubReactor 负责连接读写事件、TLS 握手推进和超时扫描
-5. 业务解析与响应处理交给动态线程池协同完成
-6. HTTP 明文静态文件走 `sendfile`
-7. HTTPS 请求自动切换为 `SSL_read / SSL_write`
+- Linux 网络编程：`socket`、`epoll`、非阻塞 IO、ET / LT、`sendfile`
+- C++ 服务端基础设施：线程池、连接池、日志系统、定时器、配置化
+- 服务端工程化能力：鉴权、错误处理、部署、验证脚本、文档沉淀
+- 代码重构能力：将早期臃肿的 HTTP 处理逻辑按职责拆分为独立模块
 
-## 功能增强清单
+---
 
-- 从半同步半反应堆升级为主从 Reactor / Multi-Reactor
-- 线程池优化：动态扩容、空闲线程回收
-- `LT` 切换为 `ET`
-- 增加 ET 模式下的一次性读满处理
-- 修复 `EAGAIN` 处理不完整问题
-- 支持长连接 `Keep-Alive`
-- 增加最小堆定时器处理超时连接
-- HTTP/1.1 基础解析增强
-- MySQL 连接池复用、超时检测、自动重连
-- 引入内存池与环形缓冲区
-- 减少内存拷贝
-- 日志系统异步化、日志分级、日志滚动
-- 配置文件读取运行参数
-- 增加守护进程模式、后台运行
-- 完善异常处理、崩溃重启、信号处理
-- 支持 HTTPS（OpenSSL）
+## 核心亮点
 
-## 目录结构
+- 从教学型单体 HTTP 处理逻辑，重构为分层模块化结构
+- 将 Reactor 模型升级为 `Main-Reactor + Multi-SubReactor`
+- 将请求处理链拆为 `parser / io / response / runtime / auth / file-service / utils`
+- 支持 MySQL 持久化会话、文件元数据、操作审计
+- 支持 Bearer Token 鉴权和 `/api/private/*` 私有接口保护
+- 明文静态文件支持 `sendfile`，HTTPS 自动切换 `SSL_read / SSL_write`
+- 使用最小堆定时器回收超时连接
+- Docker Compose 可直接拉起 `web + mysql`
+- 具备分层 smoke test：`auth`、`private-api`、`files`
+- 提供压测数据表、QPS/P99/错误数图、架构图和时序图
 
-```text
-.
-├── CGImysql/          # MySQL 连接池
-├── http/              # HTTP 连接、请求解析、响应发送
-├── lock/              # 同步原语封装
-├── log/               # 日志系统
-├── memorypool/        # 内存池
-├── root/              # 静态资源
-├── threadpool/        # 动态线程池
-├── timer/             # 超时管理
-├── config.cpp
-├── config.h
-├── main.cpp
-├── server.conf        # 运行配置
-├── server_ctl.sh      # start/stop/restart/reload/status
-├── webserver.cpp
-└── webserver.h
-```
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         启动阶段                                │
-│                                                                 │
-│  main()                                                         │
-│    ├─ Config::parse_arg()     解析命令行 -f conf -p port ...    │
-│    │    └─ load_file()        读取 server.conf                  │
-│    │                                                            │
-│    ├─ daemon_mode?                                              │
-│    │   ├─ Yes → run_daemon_supervisor()  守护进程 + 自动重启    │
-│    │   │         └─ fork() → run_server_process()               │
-│    │   └─ No  → run_server_process()     前台运行               │
-│    │                                                            │
-│    └─ run_server_process()                                      │
-│         ├─ 环境变量覆盖 TWS_DB_*, TWS_AUTH_TOKEN                │
-│         ├─ WebServer::init()       保存所有配置参数             │
-│         ├─ server.log_write()      初始化日志(同步/异步)        │
-│         ├─ server.tls_init()       加载SSL证书(可选)            │
-│         ├─ server.sql_pool()       创建数据库连接池             │
-│         │    └─ initmysql_result() 预加载user表到内存map        │
-│         ├─ server.thread_pool()    创建线程池(动态伸缩)         │
-│         ├─ server.trig_mode()      设置ET/LT触发模式            │
-│         ├─ server.eventListen()    创建监听socket + epoll       │
-│         │    └─ init_sub_reactors()  启动N个子Reactor线程       │
-│         └─ server.eventLoop()      进入主事件循环 ──────────┐   │
-└─────────────────────────────────────────────────────────────│───┘
-                                                              │
-┌─────────────────────────────────────────────────────────────▼───┐
-│                      连接接入阶段                               │
-│                                                                 │
-│  主Reactor (eventLoop)                                          │
-│    └─ epoll_wait() 只监听 listenfd                              │
-│         └─ dealclientdata()                                     │
-│              ├─ accept() 接受新连接                             │
-│              ├─ 轮询选择子Reactor (round-robin)                 │
-│              └─ SubReactor::dispatch(connfd)                    │
-│                   └─ 写eventfd唤醒子Reactor                     │
-│                                                                 │
-│  子Reactor线程 (SubReactor::run)                                │
-│    └─ handle_notify()                                           │
-│         └─ register_connection()                                │
-│              ├─ http_conn::init()  初始化连接对象               │
-│              │    └─ SSL_new() (如果HTTPS)                      │
-│              ├─ 注册到子Reactor的epoll                          │
-│              └─ refresh_timer() 加入超时堆                      │
-└─────────────────────────────────────────────────────────────────┘
-                            │
-                 ┌──────────▼──────────┐
-                 │   子Reactor epoll    │
-                 │   检测到 EPOLLIN     │
-                 └──────────┬──────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────────┐
-│                      请求处理阶段                               │
-│                                                                 │
-│  dealwithread(sockfd)                                           │
-│    ├─ TLS握手 (如需要): SSL_accept()                           │
-│    ├─ read_once()                                               │
-│    │    ├─ ring_recv() ← recv() / SSL_read()                   │
-│    │    └─ sync_read_buffer() → 数据进入 m_read_buf            │
-│    └─ threadpool::append_p()  提交到线程池                     │
-│                                                                 │
-│  线程池工作线程                                                 │
-│    └─ http_conn::process()                                      │
-│         │                                                       │
-│         ├─ process_read() ── HTTP解析状态机 ──┐                 │
-│         │   ├─ parse_request_line()           │                 │
-│         │   │    提取 METHOD, URL, VERSION     │                │
-│         │   ├─ parse_headers()                │                 │
-│         │   │    提取 Host, Content-Length,    │                 │
-│         │   │    Content-Type, Authorization   │                │
-│         │   └─ parse_content()                │                 │
-│         │        读取请求体                    │                 │
-│         │                                     ▼                 │
-│         │                              do_request()             │
-│         │                                     │                 │
-│         │              ┌──────────────────────┤                 │
-│         │              ▼                      ▼                 │
-│         │     run_before_middlewares()   parse_post_body()      │
-│         │       ├─ middleware_request_log()  解析表单/JSON      │
-│         │       └─ middleware_auth()                            │
-│         │            Bearer Token校验                           │
-│         │              │                                        │
-│         │              ▼                                        │
-│         │        route_request() ── 路由匹配 ──┐                │
-│         │         │                            │                │
-│         │    ┌────┴────┐              ┌────────┴───────┐       │
-│         │    │ API路由  │              │  静态文件路由   │       │
-│         │    │ 精确匹配 │              │ handle_static  │       │
-│         │    │ g_routes │              │   _route()     │       │
-│         │    └────┬────┘              └────────┬───────┘       │
-│         │         │                            │                │
-│         │   ┌─────┴──────┐          resolve_static_path()      │
-│         │   │ 登录/注册   │          open_static_file()         │
-│         │   │ handle_auth │          open() + stat()            │
-│         │   │ _request()  │                   │                 │
-│         │   │ ↓           │                   │                 │
-│         │   │ mysql_query  │                  │                 │
-│         │   │ (转义防注入) │                  │                 │
-│         │   └─────┬──────┘                   │                 │
-│         │         │                           │                 │
-│         │         ▼                           ▼                 │
-│         │     run_after_middlewares()                           │
-│         │       API结果 → JSON格式化                            │
-│         │              │                                        │
-│         │              ▼                                        │
-│         ├─ process_write(HTTP_CODE) ── 生成响应 ──┐             │
-│         │   ├─ add_status_line()   "HTTP/1.1 200 OK\r\n"      │
-│         │   ├─ add_headers()       Content-Length, Type...     │
-│         │   ├─ add_content()       响应体(错误页/JSON)          │
-│         │   └─ 写入 m_write_ring 缓冲区                        │
-│         │                                                       │
-│         └─ 注册 EPOLLOUT → 等待可写事件                        │
-└─────────────────────────────────────────────────────────────────┘
-                            │
-                 ┌──────────▼──────────┐
-                 │   子Reactor epoll    │
-                 │   检测到 EPOLLOUT    │
-                 └──────────┬──────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────────────┐
-│                      响应发送阶段                               │
-│                                                                 │
-│  dealwithwrite(sockfd) → http_conn::write()                     │
-│    ├─ ring_send() 发送响应头                                    │
-│    │    └─ send() / SSL_write()                                 │
-│    ├─ 发送文件体                                                │
-│    │    ├─ HTTP:  sendfile() 零拷贝                             │
-│    │    └─ HTTPS: read() + SSL_write()                          │
-│    └─ 完成后:                                                   │
-│         ├─ Keep-Alive → init() 重置, 注册EPOLLIN等待下个请求   │
-│         └─ Close → close_conn() 关闭连接                       │
-└─────────────────────────────────────────────────────────────────┘
+---
 
-┌─────────────────────────────────────────────────────────────────┐
-│                      辅助模块                                   │
-│                                                                 │
-│  超时管理 (子Reactor内)                                         │
-│    ├─ 最小堆管理连接超时 (默认15秒)                             │
-│    ├─ 每次I/O后 refresh_timer() 刷新                           │
-│    └─ scan_timeout() 清理过期连接                              │
-│                                                                 │
-│  线程池 (动态伸缩)                                              │
-│    ├─ 核心线程: 8个, 常驻等待                                   │
-│    ├─ 最大线程: 16个, 按需扩展                                  │
-│    └─ 空闲线程: 超时30秒后自动回收                              │
-│                                                                 │
-│  数据库连接池                                                   │
-│    ├─ RAII自动获取/归还连接                                     │
-│    ├─ 空闲超时60秒自动ping保活                                  │
-│    └─ 启动时预加载user表到内存                                  │
-│                                                                 │
-│  日志系统                                                       │
-│    ├─ 同步/异步模式可选                                         │
-│    ├─ 按日期+行数自动切割                                       │
-│    └─ 级别过滤: DEBUG < INFO < WARN < ERROR                    │
-└─────────────────────────────────────────────────────────────────┘
+## 效果预览
+
+### 功能闭环
+
+```mermaid
+flowchart LR
+    A[注册 / 登录] --> B[获取 Token]
+    B --> C[访问私有接口]
+    C --> D[上传小文件]
+    D --> E[查看文件列表]
+    E --> F[下载 / 删除文件]
+    F --> G[查看操作日志]
 ```
 
-### 核心架构特点
+### 工程闭环
 
-- **主从 Reactor 模式**：主 Reactor 只负责 accept，N 个子 Reactor 各自管理一组连接的 I/O 和超时
-- **Proactor/Reactor 可切换**：Proactor 模式下主线程完成 I/O，线程池只做业务处理；Reactor 模式下线程池也负责 I/O
-- **零拷贝**：HTTP 模式下用 `sendfile()` 直接从文件发送到 socket；HTTPS 则需经过 SSL 加密中转
-- **连接复用**：HTTP/1.1 Keep-Alive 支持，处理完一个请求后重置状态继续等待下一个
-## 编译环境
+```mermaid
+flowchart LR
+    A[编写代码] --> B[Docker Build]
+    B --> C[Docker Compose 启动]
+    C --> D[Smoke Test]
+    D --> E[压测 wrk]
+    E --> F[图表 / 文档沉淀]
+```
 
-- Linux
-- `g++`
-- `epoll`
-- MySQL Client 开发库
-- OpenSSL 开发库
+---
 
-Docker 构建环境已经在仓库内配置完成。
+## 整体架构
 
-## 快速开始
+### 1. 系统总览
 
-### 1. 使用 Docker Compose
+```mermaid
+flowchart TB
+    Client[Browser / curl / wrk]
+    Nginx[Direct Access 9006]
+    Main[Main Reactor\naccept + dispatch]
+    Sub[SubReactors\nEPOLLIN / EPOLLOUT / timeout]
+    TP[Dynamic Thread Pool]
+    HTTP[HTTP Connection Layer\nparser / auth / route / response]
+    DB[(MySQL)]
+    FS[(root/uploads)]
+    LOG[Async Logger]
+    CFG[server.conf / env]
+
+    Client --> Nginx
+    Nginx --> Main
+    Main --> Sub
+    Sub --> TP
+    TP --> HTTP
+    HTTP --> DB
+    HTTP --> FS
+    HTTP --> LOG
+    CFG --> Main
+    CFG --> HTTP
+```
+
+### 2. 启动流程
+
+```mermaid
+flowchart LR
+    A[main.cpp] --> B[读取 server.conf]
+    B --> C[环境变量覆盖]
+    C --> D[初始化日志]
+    D --> E[初始化 TLS]
+    E --> F[初始化 MySQL 连接池]
+    F --> G[预加载用户数据]
+    G --> H[初始化线程池]
+    H --> I[创建监听 socket + epoll]
+    I --> J[启动 Main / Sub Reactor]
+    J --> K[进入 event loop]
+```
+
+### 3. 部署形态
+
+```mermaid
+flowchart TB
+    subgraph Docker Compose
+        Web[web\n./server -a 1]
+        MySQL[mysql:8.0]
+    end
+
+    Browser[127.0.0.1:9006] --> Web
+    Web --> MySQL
+    Web --> Uploads[(./root/uploads)]
+    MySQL --> Data[(docker volume: mysql-data)]
+```
+
+---
+
+## 模块设计
+
+### 当前 HTTP 模块拆分
+
+```mermaid
+flowchart LR
+    Conn[http_conn.cpp\n编排 / 路由 / 中间件]
+    Parser[http_parser.cpp\n请求行 / Header / Body 解析]
+    IO[http_io.cpp\nring buffer / TLS / read/write]
+    Resp[http_response.cpp\n响应头 / 响应体拼装]
+    Runtime[http_runtime.cpp\nprocess / write 生命周期]
+    Auth[http_auth.cpp\n登录 / 会话 / 鉴权]
+    FileSvc[http_file_service.cpp\n文件上传下载 / 审计]
+    Utils[http_utils.cpp\n转义 / 解码 / JSON 辅助]
+
+    Conn --> Parser
+    Conn --> Resp
+    Conn --> Runtime
+    Conn --> Auth
+    Conn --> FileSvc
+    Conn --> Utils
+    Runtime --> IO
+    Resp --> IO
+    Auth --> Utils
+    FileSvc --> Utils
+```
+
+### 模块职责说明
+
+| 模块 | 职责 |
+| --- | --- |
+| `http_conn.cpp` | 请求编排、中间件、路由分发、静态资源入口 |
+| `http_parser.cpp` | 请求行、请求头、请求体、JSON / 表单 / multipart 解析 |
+| `http_io.cpp` | 环形缓冲区、socket 收发、TLS 握手、ET 模式读写 |
+| `http_response.cpp` | HTTP 响应格式拼装、错误响应构造 |
+| `http_runtime.cpp` | `process()` 和 `write()` 生命周期调度 |
+| `http_auth.cpp` | 注册、登录、会话持久化、Bearer Token 校验 |
+| `http_file_service.cpp` | 文件上传、列表、下载、删除、操作日志 |
+| `http_utils.cpp` | URL 解码、SQL 转义、JSON 转义、Base64 解码 |
+
+### 其他基础设施模块
+
+| 目录 | 作用 |
+| --- | --- |
+| `threadpool/` | 动态线程池，支持扩容和空闲回收 |
+| `timer/` | 最小堆定时器，处理连接超时 |
+| `CGImysql/` | MySQL 连接池和 RAII 封装 |
+| `log/` | 同步 / 异步日志、日志切分 |
+| `memorypool/` | 内存池 |
+| `root/` | 页面资源和上传目录 |
+
+---
+
+## 请求处理链路
+
+### 1. 通用请求链路
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant MR as Main Reactor
+    participant SR as Sub Reactor
+    participant TP as Thread Pool
+    participant HC as http_conn
+
+    C->>MR: 建立连接
+    MR->>SR: dispatch(connfd)
+    C->>SR: EPOLLIN
+    SR->>HC: read_once()
+    SR->>TP: append_p(http_conn)
+    TP->>HC: process()
+    HC->>HC: process_read()
+    HC->>HC: do_request()
+    HC->>HC: process_write()
+    TP-->>SR: 注册 EPOLLOUT
+    SR->>HC: write()
+    HC-->>C: HTTP Response
+```
+
+### 2. 登录链路
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant HC as http_conn
+    participant Auth as http_auth
+    participant DB as MySQL
+
+    C->>HC: POST /api/login
+    HC->>HC: parse_json_body()
+    HC->>Auth: handle_auth_request(false, true)
+    Auth->>DB: SELECT passwd, passwd_salt
+    DB-->>Auth: user row
+    Auth->>Auth: verify_user_password()
+    Auth->>DB: INSERT/UPDATE user_sessions
+    Auth-->>HC: token + expires_in
+    HC-->>C: {"code":0,"token":"..."}
+```
+
+### 3. 文件上传链路
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant HC as http_conn
+    participant Auth as Auth Middleware
+    participant FS as File Service
+    participant DB as MySQL
+    participant Disk as root/uploads
+
+    C->>HC: POST /api/private/files
+    HC->>Auth: middleware_auth()
+    Auth->>DB: SELECT user_sessions
+    DB-->>Auth: username
+    HC->>FS: handle_file_upload()
+    FS->>FS: parse_managed_upload_payload()
+    FS->>Disk: 写入文件内容
+    FS->>DB: INSERT files
+    FS->>DB: INSERT operation_logs(upload)
+    FS-->>C: upload success + file id
+```
+
+### 4. 文件下载链路
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant HC as http_conn
+    participant DB as MySQL
+    participant Disk as root/uploads
+
+    C->>HC: GET /api/private/files/:id/download
+    HC->>DB: 查询 file owner / path
+    DB-->>HC: 文件元数据
+    HC->>Disk: open(file)
+    HC->>HC: process_write(FILE_REQUEST)
+    alt HTTP
+        HC-->>C: sendfile()
+    else HTTPS
+        HC-->>C: read + SSL_write
+    end
+```
+
+### 5. 超时回收链路
+
+```mermaid
+sequenceDiagram
+    participant SR as Sub Reactor
+    participant Heap as Heap Timer
+    participant HC as http_conn
+
+    SR->>Heap: 新连接入堆
+    SR->>Heap: 每次读写后 refresh_timer()
+    SR->>Heap: epoll_wait(timeout = heap top)
+    Heap-->>SR: 最早超时连接
+    SR->>HC: close_conn()
+```
+
+---
+
+## 文件业务模块
+
+### 业务能力
+
+- 用户注册 / 登录
+- Bearer Token 私有接口鉴权
+- 小文件上传
+- 文件列表
+- 文件下载
+- 文件删除
+- 操作日志审计
+
+### 业务数据模型
+
+```mermaid
+erDiagram
+    user ||--o{ user_sessions : owns
+    user ||--o{ files : owns
+    user ||--o{ operation_logs : writes
+
+    user {
+        varchar username
+        varchar passwd
+        varchar passwd_salt
+    }
+
+    user_sessions {
+        varchar token
+        varchar username
+        timestamp expires_at
+        timestamp created_at
+    }
+
+    files {
+        bigint id
+        varchar owner_username
+        varchar stored_name
+        varchar original_name
+        varchar content_type
+        bigint file_size
+        timestamp created_at
+    }
+
+    operation_logs {
+        bigint id
+        varchar username
+        varchar action
+        varchar resource_type
+        bigint resource_id
+        text detail
+        timestamp created_at
+    }
+```
+
+### 存储策略
+
+```mermaid
+flowchart LR
+    Upload[上传请求]
+    Meta[files 表]
+    Audit[operation_logs 表]
+    Session[user_sessions 表]
+    Disk[root/uploads]
+
+    Upload --> Disk
+    Upload --> Meta
+    Upload --> Audit
+    Session --> Upload
+```
+
+### 当前约束
+
+- 当前展示方案只保留 `64 KB` 以内小文件上传
+- 上传内容通过 JSON 中的 `content_base64` 字段传输
+- 目标是展示业务闭环和服务端能力，不是大文件传输系统
+
+详细说明见 [docs/file-module.md](docs/file-module.md)。
+
+---
+
+## 并发模型与资源治理
+
+### Reactor 模型
+
+```mermaid
+flowchart LR
+    Listen[listenfd]
+    Main[Main Reactor]
+    Sub1[SubReactor 1]
+    Sub2[SubReactor 2]
+    SubN[SubReactor N]
+    Pool[Thread Pool]
+
+    Listen --> Main
+    Main --> Sub1
+    Main --> Sub2
+    Main --> SubN
+    Sub1 --> Pool
+    Sub2 --> Pool
+    SubN --> Pool
+```
+
+### 线程池策略
+
+```mermaid
+flowchart TB
+    Submit[提交任务] --> Queue[任务队列]
+    Queue --> Core[核心线程常驻]
+    Queue --> Burst[高峰时扩容线程]
+    Burst --> Reclaim[空闲超时回收]
+```
+
+### 连接池策略
+
+```mermaid
+flowchart LR
+    Req[业务请求] --> RAII[connectionRAII]
+    RAII --> Pool[MySQL 连接池]
+    Pool --> Reuse[连接复用]
+    Pool --> Ping[空闲连接保活检测]
+    Pool --> Reconnect[失效连接自动重连]
+```
+
+### 超时治理策略
+
+| 能力 | 做法 |
+| --- | --- |
+| 空闲连接回收 | 最小堆定时器 |
+| 连接活跃刷新 | 每次成功读写后刷新过期时间 |
+| 长连接支持 | HTTP/1.1 Keep-Alive |
+| ET 读写边界 | 一次性读到 `EAGAIN` |
+| HTTPS 兼容 | TLS 握手状态推进，按事件切换读写兴趣 |
+
+---
+
+## 部署与运行
+
+### 1. Docker Compose 启动
 
 ```bash
 docker compose up --build
 ```
 
-默认会启动：
+启动后默认服务：
 
-- MySQL 8.0
-- Web 服务
+- Web: `http://127.0.0.1:9006/`
+- MySQL: `127.0.0.1:3307`
 
-访问地址：
-
-```text
-http://127.0.0.1:9006/
-```
-
-推荐先验证：
+### 2. 快速验证
 
 ```bash
 curl -I http://127.0.0.1:9006/
+curl http://127.0.0.1:9006/healthz
 ```
 
-### 2. 本地编译
+### 3. 本地编译
 
-确保本机已经安装：
+确保安装：
 
 - `g++`
 - `libmysqlclient`
@@ -301,21 +480,11 @@ make server
 ./server -f server.conf
 ```
 
-## 技术栈
+### 4. 配置项
 
-- 语言：C++
-- 平台：Linux
-- IO 多路复用：`epoll`
-- 并发模型：Main-Reactor + Multi-SubReactor
-- 数据库：MySQL
-- TLS：OpenSSL
-- 构建方式：`make` / Docker Compose
+项目默认配置文件是 [server.conf](server.conf)。
 
-## 配置文件
-
-项目使用 [server.conf](/Users/mac/Desktop/TinyWebServer-master/server.conf) 作为默认配置入口。
-
-当前支持的核心配置项：
+常用配置如下：
 
 ```ini
 port=9006
@@ -324,20 +493,15 @@ log_level=1
 log_split_lines=800000
 log_queue_size=800
 trig_mode=3
-opt_linger=0
 sql_num=8
 thread_num=8
 threadpool_max_threads=16
 threadpool_idle_timeout=30
 mysql_idle_timeout=60
 conn_timeout=15
-close_log=0
 actor_model=0
 daemon_mode=0
-pid_file=./TinyWebServer.pid
 https_enable=0
-https_cert_file=./certs/server.crt
-https_key_file=./certs/server.key
 auth_token=tinywebserver-secret
 db_host=127.0.0.1
 db_port=3306
@@ -346,58 +510,7 @@ db_password=root
 db_name=qgydb
 ```
 
-### 配置说明
-
-- `port`：监听端口
-- `log_write`：日志模式，`0` 同步，`1` 异步
-- `log_level`：日志级别
-- `trig_mode`：触发模式，`3` 表示 `ET + ET`
-- `sql_num`：MySQL 连接池大小
-- `thread_num`：初始线程数
-- `threadpool_max_threads`：线程池最大线程数
-- `threadpool_idle_timeout`：线程空闲回收时间
-- `mysql_idle_timeout`：MySQL 空闲连接检测时间
-- `conn_timeout`：连接超时时间
-- `actor_model`：并发模型选择
-- `daemon_mode`：是否启用守护进程
-- `pid_file`：守护进程 PID 文件
-- `https_enable`：是否启用 HTTPS
-- `https_cert_file`：证书路径
-- `https_key_file`：私钥路径
-- `auth_token`：API 鉴权 token
-
-## 命令行参数
-
-```bash
-./server -f server.conf
-./server -p 9006 -l 1 -m 3 -o 0 -s 8 -t 8 -c 0 -a 1 -d 1
-```
-
-支持的命令行参数：
-
-- `-f`：配置文件路径
-- `-p`：端口
-- `-l`：日志写入模式
-- `-m`：触发模式
-- `-o`：`linger` 配置
-- `-s`：数据库连接数量
-- `-t`：线程数量
-- `-c`：是否关闭日志
-- `-a`：并发模型
-- `-d`：是否启用守护进程
-
-说明：数据库相关配置优先读取环境变量 `TWS_DB_*`。
-
-## 守护进程与后台运行
-
-启用方式：
-
-```ini
-daemon_mode=1
-pid_file=./TinyWebServer.pid
-```
-
-控制脚本：
+### 5. 守护进程与控制脚本
 
 ```bash
 ./server_ctl.sh start
@@ -407,16 +520,9 @@ pid_file=./TinyWebServer.pid
 ./server_ctl.sh status
 ```
 
-已支持：
+### 6. HTTPS
 
-- PID 文件写入与清理
-- 防重复启动
-- `SIGTERM / SIGINT / SIGHUP` 处理
-- 守护模式下 worker 异常退出自动拉起
-
-## HTTPS 使用说明
-
-先准备证书：
+生成自签名证书：
 
 ```bash
 mkdir -p certs
@@ -427,7 +533,7 @@ openssl req -x509 -nodes -newkey rsa:2048 \
   -subj "/CN=localhost"
 ```
 
-修改配置：
+配置：
 
 ```ini
 https_enable=1
@@ -435,117 +541,43 @@ https_cert_file=./certs/server.crt
 https_key_file=./certs/server.key
 ```
 
-启动后访问：
+验证：
 
 ```bash
 curl -k https://127.0.0.1:9006/
 ```
 
-说明：
+---
 
-- HTTP 明文静态文件发送仍走 `sendfile`
-- HTTPS 连接因 TLS 加密限制，自动回退到 `SSL_write` 分块发送
+## 接口与页面
 
-## 路由分发
+### 页面入口
 
-当前版本已经把请求处理从散落的 `if/else` 判断整理为统一的“方法 + 路径”分发表，路由入口会先做请求体解析，再根据请求方法和 URL 分发到对应处理逻辑。
+- `/register.html`
+- `/log.html`
+- `/welcome.html`
+- `/picture.html`
+- `/video.html`
+- `/files.html`
 
-当前内置路由包括：
+### 主要接口
 
-- `POST /api/login`
-- `POST /api/register`
-- `POST /api/echo`
-- `GET /api/private/ping`
-- `POST /2`
-- `POST /3`
-- `GET /0`
-- `GET /1`
-- `GET /5`
-- `GET /6`
-- `GET /7`
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/healthz` | 健康检查 |
+| `POST` | `/api/register` | 用户注册 |
+| `POST` | `/api/login` | 登录并返回 token |
+| `GET` | `/api/private/ping` | 私有鉴权接口 |
+| `POST` | `/api/private/logout` | 退出登录 |
+| `POST` | `/api/private/files` | 上传小文件 |
+| `GET` | `/api/private/files` | 当前用户文件列表 |
+| `GET` | `/api/private/files/:id/download` | 下载文件 |
+| `DELETE` | `/api/private/files/:id` | 删除文件 |
+| `GET` | `/api/private/operations` | 查询最近操作日志 |
 
-其中：
+### 接口示例
 
-- `/2`、`/3` 兼容原始页面登录/注册逻辑
-- `/api/*` 用于 JSON / 表单接口测试
-- `/0`、`/1`、`/5`、`/6`、`/7` 是静态页面快捷入口
-
-这套结构后续可以继续扩展为：
-
-- 更多 REST 风格接口
-- 方法级权限控制
-- 中间件式鉴权/日志处理
-- 路由参数提取
-
-## 中间件链
-
-当前已经引入基础中间件链，执行顺序为：
-
-1. 请求日志中间件
-2. 鉴权中间件
-3. 路由处理
-4. 统一异常/错误响应格式化
-
-当前已实现：
-
-- 请求日志：记录 `method + path + content_type + content_length`
-- 统一鉴权：拦截 `/api/private/*`、`/api/admin/*`
-- 统一异常响应：API 请求错误自动转为 JSON
-
-### 鉴权规则
-
-默认 token 在配置文件中定义：
-
-```ini
-auth_token=tinywebserver-secret
-```
-
-请求时通过 Header 传递：
-
-```http
-Authorization: Bearer tinywebserver-secret
-```
-
-### 受保护接口示例
-
-未携带 token：
-
-```bash
-curl http://127.0.0.1:9006/api/private/ping
-```
-
-返回：
-
-```json
-{"code":401,"message":"unauthorized"}
-```
-
-携带 token：
-
-```bash
-curl http://127.0.0.1:9006/api/private/ping \
-  -H "Authorization: Bearer tinywebserver-secret"
-```
-
-返回：
-
-```json
-{"code":0,"message":"pong"}
-```
-
-## API 示例
-
-### 1. 登录接口
-
-表单方式：
-
-```bash
-curl -X POST http://127.0.0.1:9006/api/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=test&passwd=123456"
-```
-
-JSON 方式：
+登录：
 
 ```bash
 curl -X POST http://127.0.0.1:9006/api/login \
@@ -553,235 +585,184 @@ curl -X POST http://127.0.0.1:9006/api/login \
   -d '{"username":"test","passwd":"123456"}'
 ```
 
-成功响应示例：
-
-```json
-{"code":0,"message":"login success","target":"/welcome.html"}
-```
-
-### 2. 注册接口
+私有接口：
 
 ```bash
-curl -X POST http://127.0.0.1:9006/api/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"new_user","passwd":"123456"}'
+curl http://127.0.0.1:9006/api/private/ping \
+  -H "Authorization: Bearer <token>"
 ```
 
-成功响应示例：
-
-```json
-{"code":0,"message":"register success"}
-```
-
-### 3. 回显接口
+上传小文件：
 
 ```bash
-curl -X POST http://127.0.0.1:9006/api/echo \
+curl -X POST http://127.0.0.1:9006/api/private/files \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"hello":"world"}'
+  -d '{"filename":"demo.txt","content_base64":"...","content_type":"text/plain"}'
 ```
 
-响应示例：
+---
 
-```json
-{"code":0,"content_type":"application/json","body":"{\"hello\":\"world\"}"}
+## 测试与验证
+
+### Smoke Test 体系
+
+```mermaid
+flowchart LR
+    A[run_smoke_suite.sh] --> B[test_auth.sh]
+    A --> C[test_private_api.sh]
+    A --> D[test_files.sh]
+    B --> E[test_lib.sh]
+    C --> E
+    D --> E
 ```
 
-## 性能优化与项目演进
+### 脚本说明
 
-这一版改造不是单点功能堆叠，而是围绕“并发能力、连接稳定性、数据传输效率、工程可运维性”四条主线推进。
+| 脚本 | 说明 |
+| --- | --- |
+| [scripts/run_smoke_suite.sh](scripts/run_smoke_suite.sh) | 一键跑完整 smoke suite |
+| [scripts/test_auth.sh](scripts/test_auth.sh) | 注册、登录、私有鉴权、退出 |
+| [scripts/test_private_api.sh](scripts/test_private_api.sh) | 私有接口和操作日志 |
+| [scripts/test_files.sh](scripts/test_files.sh) | 文件上传、列表、下载、删除 |
+| [scripts/test_lib.sh](scripts/test_lib.sh) | 共享 curl / token / 文件辅助函数 |
 
-### 1. 并发模型升级
+### 运行方式
 
-原始实现以“半同步半反应堆”为主，结构更偏教学型。当前版本将连接接入与连接处理拆分为 `Main-Reactor + Multi-SubReactor`：
-
-- 主 Reactor 专注 `accept`
-- 多个 SubReactor 分担连接事件
-- 业务逻辑由动态线程池异步处理
-
-这样做的直接收益：
-
-- 降低单 Reactor 在高并发连接下的事件分发压力
-- 让连接接入、IO 处理、业务执行三类职责边界更清晰
-- 更适合继续演进为多核场景下的高并发服务端模型
-
-### 2. IO 模型优化
-
-事件触发模式从 `LT` 切换为 `ET`，并补齐 ET 模式下的“一次性读满直到 `EAGAIN`”处理逻辑，同时修复原生 `EAGAIN` 处理不完整的问题。
-
-这部分优化的意义在于：
-
-- 减少重复事件通知带来的额外开销
-- 避免 ET 模式下因为未读空缓冲区而导致连接假死
-- 提升高并发下连接处理的稳定性
-
-### 3. 连接生命周期治理
-
-围绕长连接和超时连接，补充了两类关键能力：
-
-- HTTP/1.1 `Keep-Alive`
-- 基于最小堆的连接超时管理
-
-当前实现中，每个 `SubReactor` 都维护一个独立的最小堆定时器：
-
-- 新连接注册后加入最小堆
-- 每次读写成功后刷新该连接的过期时间
-- 连接关闭时从堆中删除
-- `epoll_wait()` 的超时时间直接由堆顶节点决定
-- 事件循环结束后扫描堆顶，批量关闭已经超时的连接
-
-这套实现对应代码主要位于 `timer/heap_timer.*` 与 `webserver.cpp` 中的 `SubReactor::refresh_timer()`、`SubReactor::scan_timeout()`。
-
-收益主要体现在：
-
-- 减少频繁建连/断连的系统调用成本
-- 更及时地回收空闲或异常连接
-- 让服务在大量短连接和空闲连接混合场景下更稳定
-
-### 4. 传输链路优化
-
-静态文件在 HTTP 明文场景下使用 `sendfile`，避免用户态和内核态之间不必要的数据搬运；HTTPS 场景下则根据 TLS 加密要求回退为 `SSL_write` 分块发送。
-
-这部分设计的价值是：
-
-- 明文静态文件请求具备更高的传输效率
-- HTTPS 场景保持兼容性和正确性
-- 让“性能优化”和“协议正确性”两者不互相冲突
-
-### 5. 线程池与资源池优化
-
-线程池不再是固定规模，而是支持：
-
-- 动态扩容
-- 任务优先级调度
-- 空闲线程回收
-
-同时数据库侧补充了 MySQL 连接池复用、空闲检测、自动重连。
-
-这类优化的核心收益：
-
-- 在请求高峰时按需拉起更多执行资源
-- 在低负载时回收空闲线程，避免长期空转
-- 降低数据库连接反复创建带来的成本和失败概率
-
-### 6. 内存与缓冲区优化
-
-针对高频读写路径，引入了内存池和环形缓冲区，目标是减少频繁 `malloc/free` 和不必要的数据拷贝。
-
-这部分适合在项目描述中强调为：
-
-- 针对热点路径做内存分配优化
-- 通过环形缓冲区提升收发数据处理效率
-- 为后续更高吞吐场景预留扩展空间
-
-### 7. 工程可运维性增强
-
-除了网络和性能层面的改造，这个项目还补齐了实际运行所需的工程能力：
-
-- 异步日志、日志分级、日志滚动
-- 配置文件读取与环境变量覆盖
-- 守护进程模式、PID 文件、控制脚本
-- 信号处理、异常退出后的拉起机制
-- HTTPS 证书接入能力
-
-这意味着该项目已经不只是“能跑起来”的实验代码，而是具备了更完整的部署、管理和展示价值。
-
-### 8. 适合简历的表述方式
-
-如果你要把这个项目写进简历，可以直接提炼成下面这种风格：
-
-- 基于 C++/Linux 实现 Web 服务器，并将原始 TinyWebServer 从半同步半反应堆升级为 `Main-Reactor + Multi-SubReactor`
-- 基于 `epoll ET` 改造连接处理流程，补齐 `EAGAIN` 边界处理与 ET 模式读满机制，优化高并发下的事件处理效率
-- 实现 `Keep-Alive`、最小堆超时管理、动态线程池、MySQL 连接池复用，提升连接稳定性与资源利用率
-- 在 HTTP 场景下引入 `sendfile` 零拷贝传输，并补充 HTTPS、配置化运行、异步日志、守护进程和 API 路由能力
-
-如果你要把它写进 GitHub 项目简介，更适合强调“从教学项目到工程化演进”的脉络，而不是只列功能点。
-
-## MySQL 初始化
-
-Docker Compose 已经内置初始化 SQL。
-
-如果手动初始化，可参考：
-
-```sql
-CREATE DATABASE qgydb;
-USE qgydb;
-
-CREATE TABLE user(
-    username CHAR(50) NULL,
-    passwd CHAR(50) NULL
-) ENGINE=InnoDB;
-
-INSERT INTO user(username, passwd) VALUES('name', 'passwd');
+```bash
+scripts/run_smoke_suite.sh
 ```
 
-## 页面资源
+### 验证覆盖点
 
-静态资源位于 [root/](/Users/mac/Desktop/TinyWebServer-master/root) 目录，包括：
+- 服务启动与健康检查
+- 用户注册 / 登录
+- Token 生成与私有接口访问
+- 文件上传 / 列表 / 下载 / 删除
+- 操作日志写入
+- 退出登录
 
-- 登录
-- 注册
-- 图片展示
-- 视频展示
+---
 
-## 压力测试
+## 压测结果
 
-压测环境：
+### 压测环境
 
 - 服务运行方式：`docker compose up -d`
-- 压测工具：`wrk`
-- 压测目标：`http://127.0.0.1:9006/`
-- 压测页面：静态首页
+- 工具：`wrk`
+- 压测时长：`10s`
+- 目标接口：`/healthz`、`/api/private/ping`、`/api/private/files`
 
-顺序压测命令示例：
+### 结果表
 
-```bash
-wrk -c 100 -d 8s -t 4 http://127.0.0.1:9006/
-wrk -c 300 -d 8s -t 4 http://127.0.0.1:9006/
-wrk -c 500 -d 8s -t 4 http://127.0.0.1:9006/
-wrk -c 1000 -d 8s -t 8 http://127.0.0.1:9006/
+| 接口 | 并发 | 平均延迟 | Requests/sec | P99 | Socket errors |
+| --- | --- | --- | ---: | --- | --- |
+| `/healthz` | 200 | 29.09ms | 7601.75 | 83.77ms | 无 |
+| `/healthz` | 500 | 91.75ms | 5779.42 | 371.61ms | read 527, timeout 5 |
+| `/api/private/ping` | 200 | 68.74ms | 3153.38 | 304.58ms | read 32 |
+| `/api/private/files` | 200 | 36.31ms | 6024.66 | 92.37ms | timeout 15 |
+| `/api/private/files` | 500 | 102.38ms | 5579.91 | 864.80ms | read 241, timeout 45 |
+
+### 结果解读
+
+- `/healthz` 可以作为基础吞吐上限参考，200 并发约 `7.6k req/s`
+- `/api/private/ping` 展示了鉴权和 session 查询带来的真实业务开销
+- `/api/private/files` 在 200 并发时吞吐表现不错，但 500 并发后 P99 尾延迟明显恶化
+- 当前版本已经能展示“功能可用 + 有真实压测材料”，这比单纯报一个 QPS 数字更适合面试
+
+### 图表
+
+- QPS 图：[docs/benchmark-qps.svg](docs/benchmark-qps.svg)
+- P99 图：[docs/benchmark-p99.svg](docs/benchmark-p99.svg)
+- 错误数图：[docs/benchmark-errors.svg](docs/benchmark-errors.svg)
+- 原始数据：[docs/benchmark.csv](docs/benchmark.csv)
+- 详细报告：[docs/benchmark.md](docs/benchmark.md)
+
+---
+
+## 项目结构
+
+```text
+.
+├── CGImysql/                 # MySQL 连接池
+├── certs/                    # HTTPS 证书
+├── docs/                     # 架构、时序、压测文档
+├── http/                     # HTTP 模块拆分目录
+│   ├── http_conn.cpp
+│   ├── http_conn.h
+│   ├── http_parser.cpp
+│   ├── http_io.cpp
+│   ├── http_response.cpp
+│   ├── http_runtime.cpp
+│   ├── http_auth.cpp
+│   ├── http_auth_state.h
+│   ├── http_file_service.cpp
+│   └── http_utils.cpp
+├── lock/                     # 同步原语封装
+├── log/                      # 日志系统
+├── memorypool/               # 内存池
+├── root/                     # 页面资源与上传目录
+├── scripts/                  # smoke test 脚本
+├── test_pressure/            # wrk 压测脚本
+├── threadpool/               # 动态线程池
+├── timer/                    # 最小堆 / 链表定时器
+├── docker-compose.yml
+├── Dockerfile
+├── main.cpp
+├── server.conf
+├── server_ctl.sh
+├── webserver.cpp
+└── webserver.h
 ```
 
-测试结果：
+---
 
-| 并发连接 | 线程数 | 平均延迟 | Requests/sec | Socket errors |
-| --- | --- | --- | ---: | --- |
-| 100 | 4 | 29.32ms | 6108.97 | 0 |
-| 300 | 4 | 52.36ms | 6616.25 | read 106 |
-| 500 | 4 | 83.77ms | 6411.92 | read 563 |
-| 1000 | 8 | 144.79ms | 6930.60 | read 3419, timeout 5 |
+## 文档索引
 
-结果解读：
+- 架构图：[docs/architecture.md](docs/architecture.md)
+- 请求时序图：[docs/request-sequence.md](docs/request-sequence.md)
+- 文件业务说明：[docs/file-module.md](docs/file-module.md)
+- 压测报告：[docs/benchmark.md](docs/benchmark.md)
 
-- 当前版本在 Docker/Linux 环境下，对静态首页请求可稳定跑到约 `6k-7k req/s`
-- `300` 并发附近是吞吐和稳定性的较优平衡点
-- `500` 以上并发后读错误明显增加，后续优化重点仍然是非阻塞写回与连接关闭时机
+---
 
-## GitHub 提交建议
+## 简历写法
 
-仓库已经补充 `.gitignore`，建议提交前确认以下内容不要进入版本库：
+### 一句话版本
 
-- `server`
-- `ServerLog/`
-- `*.pid`
-- `certs/`
-- MySQL 数据目录
+基于 C++ / Linux / `epoll` 独立实现工程化 Web 服务，采用 `Main-Reactor + Multi-SubReactor` 架构，补齐 TLS、动态线程池、MySQL 连接池、超时治理、用户文件中心、操作审计、Docker 部署与压测验证。
 
-## 后续可继续扩展的方向
+### 项目描述版本
 
-- HTTP/1.1 更完整语义支持
-- HTTPS 热加载证书
-- HTTP/2
-- 更细粒度的监控与指标
-- 更严格的配置校验
-- 单元测试与压测脚本整理
+- 基于 `epoll`、非阻塞 socket 和 Reactor 模型独立实现 Linux 高并发 Web 服务，支持 HTTP/1.1、Keep-Alive、静态资源和基础 API
+- 将 HTTP 连接处理逻辑按职责拆分为 `parser / io / response / runtime / auth / file-service / utils` 多模块结构，显著降低单文件复杂度
+- 设计并实现用户登录、Token 鉴权、文件上传下载、权限控制、操作日志等完整业务闭环，文件元数据和会话持久化到 MySQL
+- 引入动态线程池、MySQL 连接池、最小堆超时回收、异步日志、HTTPS、Docker Compose、Smoke Test 与 `wrk` 压测材料，提升项目工程化完整度
+
+### 面试建议讲法
+
+优先按下面顺序讲：
+
+1. 这个项目解决了哪些真实的服务端工程问题
+2. Reactor / 线程池 / 连接池 / 定时器是怎么协作的
+3. 文件业务闭环是怎么接入现有 HTTP 框架的
+4. 为什么要重构 `http_conn.cpp`，最后怎么按职责拆分
+5. 如何验证重构后没有回归：smoke test + 压测材料
+
+---
+
+## 后续演进方向
+
+- 更完整的 HTTP/1.1 语义支持
+- 更严格的配置校验与配置热更新
+- 指标监控与 Prometheus 接入
+- 更正式的单元测试 / 集成测试
+- HTTP/2 / gRPC 等协议扩展
+- 大文件分片上传方案
+- 更细粒度的 RBAC 权限控制
+
+---
 
 ## License
 
-本项目保留原始 TinyWebServer 学习项目的实践属性，适合用于：
-
-- 网络编程学习
-- Linux 服务器项目练手
-- C++ 后端工程能力展示
-
-如用于简历或公开展示，建议明确说明你在原始项目基础上的增强部分。
+本项目为独立开发的 C++ Web 服务项目，用于展示 Linux 网络编程、服务端工程化实现和完整业务闭环设计能力。

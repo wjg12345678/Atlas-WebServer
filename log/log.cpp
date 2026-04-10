@@ -6,6 +6,25 @@
 #include <pthread.h>
 using namespace std;
 
+namespace
+{
+string build_dated_log_name(const tm &time_info, const string &prefix, const string &base_name, int file_index)
+{
+    char date_prefix[64] = {0};
+    snprintf(date_prefix, sizeof(date_prefix), "%d_%02d_%02d_",
+             time_info.tm_year + 1900, time_info.tm_mon + 1, time_info.tm_mday);
+
+    string path = prefix + date_prefix + base_name;
+    if (file_index > 0)
+    {
+        char suffix[32] = {0};
+        snprintf(suffix, sizeof(suffix), ".%d", file_index);
+        path += suffix;
+    }
+    return path;
+}
+}
+
 Log::Log()
 {
     m_count = 0;
@@ -68,17 +87,18 @@ bool Log::init(const char *file_name, int close_log, int log_buf_size, int split
 
  
     const char *p = strrchr(file_name, '/');
-    char log_full_name[256] = {0};
 
     if (p == NULL)
     {
-        snprintf(log_full_name, 255, "%d_%02d_%02d_%s", my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, file_name);
+        strncpy(log_name, file_name, sizeof(log_name) - 1);
+        log_name[sizeof(log_name) - 1] = '\0';
+        dir_name[0] = '\0';
     }
     else
     {
         strcpy(log_name, p + 1);
         strncpy(dir_name, file_name, p - file_name + 1);
-        snprintf(log_full_name, 255, "%s%d_%02d_%02d_%s", dir_name, my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, log_name);
+        dir_name[p - file_name + 1] = '\0';
     }
 
     m_today_year = my_tm.tm_year + 1900;
@@ -86,7 +106,8 @@ bool Log::init(const char *file_name, int close_log, int log_buf_size, int split
     m_today = my_tm.tm_mday;
     m_file_index = 0;
     
-    m_fp = fopen(log_full_name, "a");
+    const string log_full_name = build_log_file_path(my_tm, m_file_index);
+    m_fp = fopen(log_full_name.c_str(), "a");
     if (m_fp == NULL)
     {
         return false;
@@ -108,13 +129,17 @@ const char *Log::level_name(int level) const
     case ERROR:
         return "[error]:";
     default:
-        return "[info]:";
+    return "[info]:";
     }
+}
+
+string Log::build_log_file_path(const tm &time_info, int file_index) const
+{
+    return build_dated_log_name(time_info, dir_name, log_name, file_index);
 }
 
 void Log::rotate_file(const tm &my_tm)
 {
-    char new_log[256] = {0};
     fflush(m_fp);
     fclose(m_fp);
 
@@ -135,15 +160,8 @@ void Log::rotate_file(const tm &my_tm)
         ++m_file_index;
     }
 
-    if (m_file_index == 0)
-    {
-        snprintf(new_log, 255, "%s%d_%02d_%02d_%s", dir_name, m_today_year, m_today_mon, m_today, log_name);
-    }
-    else
-    {
-        snprintf(new_log, 255, "%s%d_%02d_%02d_%s.%d", dir_name, m_today_year, m_today_mon, m_today, log_name, m_file_index);
-    }
-    m_fp = fopen(new_log, "a");
+    tm current_time = my_tm;
+    m_fp = fopen(build_log_file_path(current_time, m_file_index).c_str(), "a");
 }
 
 void Log::write_log(int level, const char *format, ...)

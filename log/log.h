@@ -59,6 +59,7 @@ private:
 private:
     const char *level_name(int level) const;
     void rotate_file(const tm &my_tm);
+    std::string build_log_file_path(const tm &time_info, int file_index) const;
 
     char dir_name[128]; //路径名
     char log_name[128]; //log文件名

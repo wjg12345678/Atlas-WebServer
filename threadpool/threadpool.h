@@ -266,6 +266,8 @@ void threadpool<T>::execute(task &current_task)
         return;
     }
 
+    request->lock_request();
+
     if (current_task.use_state)
     {
         request->m_state = current_task.state;
@@ -305,6 +307,8 @@ void threadpool<T>::execute(task &current_task)
         connectionRAII mysqlcon(&request->mysql, m_connPool);
         request->process();
     }
+
+    request->unlock_request();
 }
 
 #endif

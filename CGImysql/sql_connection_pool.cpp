@@ -6,9 +6,16 @@
 #include <list>
 #include <pthread.h>
 #include <iostream>
+#include <unistd.h>
 #include "sql_connection_pool.h"
 
 using namespace std;
+
+namespace
+{
+const int kPoolInitRetryTimes = 10;
+const unsigned int kPoolInitRetryDelaySeconds = 1;
+}
 
 connection_pool::connection_pool()
 {
@@ -36,9 +43,13 @@ MYSQL *connection_pool::create_connection()
 	mysql_options(con, MYSQL_OPT_RECONNECT, &reconnect);
 
 	MYSQL *connected = mysql_real_connect(con, m_url.c_str(), m_User.c_str(), m_PassWord.c_str(),
-										  m_DatabaseName.c_str(), atoi(m_Port.c_str()), NULL, 0);
+											  m_DatabaseName.c_str(), atoi(m_Port.c_str()), NULL, 0);
 	if (connected == NULL)
 	{
+		const char *error_message = mysql_error(con);
+		LOG_ERROR("MySQL connect failed host=%s port=%s db=%s user=%s error=%s",
+				  m_url.c_str(), m_Port.c_str(), m_DatabaseName.c_str(), m_User.c_str(),
+				  error_message && error_message[0] ? error_message : "unknown");
 		mysql_close(con);
 		return NULL;
 	}
@@ -106,10 +117,22 @@ void connection_pool::init(string url, string User, string PassWord, string DBNa
 
 	for (int i = 0; i < MaxConn; i++)
 	{
-		MYSQL *con = create_connection();
+		MYSQL *con = NULL;
+		for (int attempt = 1; attempt <= kPoolInitRetryTimes; ++attempt)
+		{
+			con = create_connection();
+			if (con != NULL)
+			{
+				break;
+			}
+
+			LOG_ERROR("MySQL pool init retry %d/%d for connection slot %d", attempt, kPoolInitRetryTimes, i + 1);
+			sleep(kPoolInitRetryDelaySeconds);
+		}
+
 		if (con == NULL)
 		{
-			LOG_ERROR("MySQL Error");
+			LOG_ERROR("MySQL pool init failed after retries, slot=%d/%d", i + 1, MaxConn);
 			exit(1);
 		}
 		connList.push_back(con);

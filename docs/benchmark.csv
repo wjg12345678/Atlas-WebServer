@@ -1,0 +1,6 @@
+endpoint,concurrency,duration_seconds,qps,avg_latency_ms,p99_latency_ms,max_latency_s,errors
+/healthz,200,10,7601.75,29.09,83.77,1.09,none
+/healthz,500,10,5779.42,91.75,371.61,1.21,"read 527, timeout 5"
+/api/private/ping,200,10,3153.38,68.74,304.58,1.19,"read 32"
+/api/private/files,200,10,6024.66,36.31,92.37,1.11,"timeout 15"
+/api/private/files,500,10,5579.91,102.38,864.80,1.80,"read 241, timeout 45"

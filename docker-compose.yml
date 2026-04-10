@@ -1,3 +1,5 @@
+name: atlas-webserver
+
 services:
   mysql:
     image: mysql:8.0
@@ -18,6 +20,7 @@ services:
       start_period: 20s
 
   web:
+    image: atlas-webserver:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -31,6 +34,8 @@ services:
       TWS_DB_USER: root
       TWS_DB_PASSWORD: root
       TWS_DB_NAME: qgydb
+    volumes:
+      - ./root/uploads:/app/root/uploads
     ports:
       - "9006:9006"
     command: ["./server", "-a", "1"]

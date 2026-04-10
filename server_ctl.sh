@@ -33,7 +33,7 @@ read_config_value() {
     fi
 }
 
-PID_FILE=$(read_config_value "pid_file" "./TinyWebServer.pid")
+PID_FILE=$(read_config_value "pid_file" "./atlas-webserver.pid")
 DAEMON_MODE=$(read_config_value "daemon_mode" "0")
 
 case "$PID_FILE" in

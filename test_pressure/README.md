@@ -7,16 +7,18 @@
 
 测试规则
 ------------
-* 快速测试示例
+* 健康检查快速测试
 
     ```bash
-    wrk -c 1000 -d 5s -t 4 http://127.0.0.1:9006/
+    wrk -c 1000 -d 5s -t 4 -s ./healthz.lua http://127.0.0.1:9006/healthz
     ```
 
 * 使用脚本测试
 
     ```bash
-    ./wrk_test.sh http://127.0.0.1:9006/ 1000 5s 4
+    ./wrk_test.sh http://127.0.0.1:9006/healthz 1000 5s 4 ./healthz.lua
+    TOKEN=your-token ./wrk_test.sh http://127.0.0.1:9006/api/private/ping 200 10s 4 ./private_ping.lua
+    TOKEN=your-token ./wrk_test.sh http://127.0.0.1:9006/api/private/files 200 10s 4 ./private_files.lua
     ```
 
 * 参数说明
@@ -25,6 +27,7 @@
 > * `-d` 表示测试持续时间（如 5s、1m）
 > * `-t` 表示线程数
 > * URL 是目标服务器地址
+> * `-s` 可加载 Lua 脚本，用于压测需要 Header/鉴权的接口
 
 测试结果示例
 ---------
@@ -48,3 +51,12 @@ Transfer/sec:      1.69KB
 > * Latency：响应延迟（平均值、标准差、最大值）
 > * Transfer/sec：每秒传输数据量
 > * Socket errors：连接错误统计
+
+推荐至少保留三组数据：
+
+```bash
+./wrk_test.sh http://127.0.0.1:9006/healthz 200 10s 4 ./healthz.lua
+./wrk_test.sh http://127.0.0.1:9006/healthz 500 10s 4 ./healthz.lua
+TOKEN=your-token ./wrk_test.sh http://127.0.0.1:9006/api/private/ping 200 10s 4 ./private_ping.lua
+TOKEN=your-token ./wrk_test.sh http://127.0.0.1:9006/api/private/files 200 10s 4 ./private_files.lua
+```

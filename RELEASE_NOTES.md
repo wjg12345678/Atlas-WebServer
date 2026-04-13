@@ -1,5 +1,72 @@
 # Release Notes
 
+## v1.1 Benchmark & Showcase Refresh
+
+这一版聚焦“展示质量”和“可讲述性”升级，重点收口 benchmark 体系、刷新仓库文案，并补齐更适合 GitHub 展示与面试讲解的发布材料。
+
+### Highlights
+
+- 重做 benchmark 方案，形成覆盖轻接口、静态资源、鉴权接口、文件查询和上传写路径的分层压测矩阵
+- 新增统一 benchmark runner，固定并发、线程数、时长、请求体大小、数据库命中与容器资源采样
+- 补充 `1000` 并发读场景样本，并加入同步 / 异步日志模式对比，给出更完整的性能结论
+- 刷新 README 中的压测章节、项目亮点和简历写法，使仓库首页信息更适合展示和投递
+- 清理压测生成物管理方式，补充 `.gitignore`，避免将本地 benchmark 临时文件误提交到仓库
+
+### Benchmark Summary
+
+- `GET /healthz` 在当前发布配置下可达到 `7.5k req/s` 量级
+- `GET /api/private/ping` 在 Bearer Token 鉴权链路下仍可达到 `7.4k req/s` 量级
+- `GET /api/private/files` 在高并发下明显受 MySQL 影响，`500~1000` 并发区间开始出现稳定 `read/timeout` 错误
+- `POST /api/login` 与 `POST /api/private/files` 仍是当前最重的两条写路径，后续优化优先级高于继续拉高轻接口吞吐
+- 当前机器上 `TWS_LOG_WRITE=0` 明显优于默认异步日志模式，仓库文档已显式说明这一点
+
+### User-Facing Changes
+
+- README 首页信息密度更高，压测方法、结果和结论更完整
+- 新增更适合简历和面试复述的项目描述版本
+- 压测文档从“单组结果展示”升级为“方法 + 矩阵 + 对比实验 + 结论”的完整材料
+
+### Added Files
+
+- `scripts/run_benchmark_suite.sh`
+- `test_pressure/login.lua`
+- `test_pressure/private_upload.lua`
+
+### Updated Files
+
+- `README.md`
+- `docs/benchmark.md`
+- `docs/benchmark.csv`
+- `docker-compose.yml`
+- `.gitignore`
+
+### Recommended GitHub Release Copy
+
+Title:
+
+`v1.1 Benchmark & Showcase Refresh`
+
+Body:
+
+```text
+This release focuses on benchmark quality and project presentation.
+
+Highlights:
+- Rebuilt the benchmark suite into a layered matrix covering health checks, static pages, authenticated APIs, file listing, and upload write paths
+- Added a reusable benchmark runner with fixed variables and Docker resource sampling
+- Added 1000-concurrency read-path samples and an async-vs-sync logging comparison
+- Refreshed the README benchmark section, project highlights, and resume-oriented descriptions
+- Cleaned up benchmark artifact handling via .gitignore
+
+Key numbers in the current publishable configuration:
+- GET /healthz: up to 7.5k req/s
+- GET /api/private/ping: up to 7.4k req/s
+- GET /api/private/files: ~2.1k to 3.1k req/s depending on concurrency, with MySQL becoming the dominant bottleneck under higher load
+- POST /api/login and POST /api/private/files remain the heaviest write paths and the clearest next optimization targets
+
+See README.md and docs/benchmark.md for the full matrix, methodology, and comparison notes.
+```
+
 ## v1.0 Showcase Build
 
 这一版可以作为 Atlas WebServer 的首个完整展示版本，已经具备“可运行、可演示、可讲解、可验证”的项目交付形态。

@@ -30,10 +30,10 @@
 
 ## 亮点摘要
 
-- 将早期臃肿的 HTTP 连接处理逻辑拆分为 `parser / io / response / runtime / auth / file-service / utils` 七类职责模块
-- 基于 `Main-Reactor + Multi-SubReactor + Dynamic Thread Pool` 构建并发处理模型，并补充连接超时治理
-- 引入 MySQL 会话持久化、文件元数据管理、操作审计，项目从“网络框架”升级为“有真实业务的服务”
-- 增加 Docker Compose、健康检查、Smoke Test、压测图表和结构化文档，形成完整展示闭环
+- 将早期单体式 HTTP 处理逻辑拆分为 `parser / io / response / runtime / auth / file-service / utils` 七类职责模块，降低单文件复杂度并提升业务扩展性
+- 基于 `Main-Reactor + Multi-SubReactor + Dynamic Thread Pool` 构建并发处理模型，配合最小堆超时回收完成连接资源治理
+- 引入 MySQL 会话持久化、文件元数据和操作审计，使项目从“网络程序 Demo”升级为“带真实业务闭环的服务端项目”
+- 补齐 Docker Compose、健康检查、Smoke Test、分层压测矩阵和结构化文档，形成“可运行、可验证、可讲解”的展示闭环
 
 ---
 
@@ -819,18 +819,25 @@ scripts/run_smoke_suite.sh
 
 ### 一句话版本
 
-基于 C++ / Linux / `epoll` 独立实现工程化 Web 服务，采用 `Main-Reactor + Multi-SubReactor` 架构，补齐 TLS、动态线程池、MySQL 连接池、超时治理、用户文件中心、操作审计、Docker 部署与压测验证。
+基于 C++ / Linux / `epoll` 独立实现工程化 Web 服务，采用 `Main-Reactor + Multi-SubReactor` 架构，补齐鉴权、文件业务、MySQL 持久化、超时治理、Docker 部署、Smoke Test 与 `wrk` 压测验证。
 
 ### 中文简介版本
 
-Atlas WebServer 是一个我独立设计并持续重构的 C++ 服务端项目。项目基于 Linux `epoll` 和 Reactor 模型实现高并发 Web 服务，并在网络通信能力之外，进一步补齐了用户系统、Token 鉴权、小文件上传下载、权限控制、操作日志、Docker Compose 部署、Smoke Test 和 `wrk` 压测材料，用于展示我在 Linux 网络编程、服务端架构设计和工程化落地方面的完整能力。
+Atlas WebServer 是一个我独立设计并持续重构的 C++ 服务端项目。项目基于 Linux `epoll` 和 Reactor 模型实现高并发 Web 服务，并在网络通信能力之外，进一步补齐了用户注册登录、Bearer Token 鉴权、小文件上传下载、权限控制、操作日志、Docker Compose 部署、Smoke Test 和分层压测材料，用于展示我在 Linux 网络编程、服务端架构设计和工程化落地方面的完整能力。
 
 ### 项目描述版本
 
-- 基于 `epoll`、非阻塞 socket 和 Reactor 模型独立实现 Linux 高并发 Web 服务，支持 HTTP/1.1、Keep-Alive、静态资源和基础 API
-- 将 HTTP 连接处理逻辑按职责拆分为 `parser / io / response / runtime / auth / file-service / utils` 多模块结构，显著降低单文件复杂度
-- 设计并实现用户登录、Token 鉴权、文件上传下载、权限控制、操作日志等完整业务闭环，文件元数据和会话持久化到 MySQL
-- 引入动态线程池、MySQL 连接池、最小堆超时回收、异步日志、HTTPS、Docker Compose、Smoke Test 与 `wrk` 压测材料，提升项目工程化完整度
+- 基于 `epoll`、非阻塞 socket 和 Reactor 模型独立实现 Linux 高并发 Web 服务，采用 `Main-Reactor + Multi-SubReactor + ThreadPool` 并发处理架构，支持 HTTP/1.1、Keep-Alive、静态资源和基础 API。
+- 将 HTTP 层重构为 `parser / io / response / runtime / auth / file-service / utils` 多模块结构，降低单文件耦合度，提升请求解析、路由分发和业务扩展的可维护性。
+- 设计并实现注册登录、Bearer Token 鉴权、会话持久化、小文件上传下载、权限控制和操作审计等完整业务闭环，文件元数据和用户会话落库到 MySQL。
+- 引入最小堆连接超时治理、MySQL 连接池、Docker Compose、健康检查、Smoke Test 与 `wrk` 分层压测矩阵，形成从开发、部署到验证的工程闭环。
+
+### 简历精简版
+
+- 基于 `epoll` 设计并实现 C++ Web 服务，采用 `Main-Reactor + Multi-SubReactor + ThreadPool` 并发模型，支持 HTTP/1.1、Keep-Alive 和静态资源访问。
+- 将 HTTP 请求处理拆分为解析、IO、响应、运行时调度、鉴权、文件服务等模块，提升代码可维护性与业务扩展能力。
+- 基于 MySQL 连接池实现注册登录、Bearer Token 鉴权、会话持久化、文件元数据管理和操作审计，完成小文件上传/列表/下载/删除业务闭环。
+- 引入最小堆定时器管理空闲连接超时，并补充 Docker Compose、健康检查、Smoke Test 与 `wrk` 压测材料，形成完整工程闭环。
 
 ### 面试建议讲法
 

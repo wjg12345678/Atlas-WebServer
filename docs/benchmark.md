@@ -138,7 +138,7 @@
 
 ## benchmark.csv 字段说明
 
-`[benchmark.csv](/Users/mac/Desktop/TinyWebServer-master/docs/benchmark.csv)` 用于沉淀结构化性能数据，字段含义如下：
+`[benchmark.csv](benchmark.csv)` 用于沉淀结构化性能数据，字段含义如下：
 
 | Field | Description |
 | --- | --- |

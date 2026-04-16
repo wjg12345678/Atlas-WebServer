@@ -22,10 +22,10 @@
 
 ### Documentation Changes
 
-- [README.md](/Users/mac/Desktop/TinyWebServer-master/README.md) 重组为产品化工程首页
-- [docs/benchmark.md](/Users/mac/Desktop/TinyWebServer-master/docs/benchmark.md) 收敛为标准性能报告
-- [docs/architecture.md](/Users/mac/Desktop/TinyWebServer-master/docs/architecture.md) 和 [docs/request-sequence.md](/Users/mac/Desktop/TinyWebServer-master/docs/request-sequence.md) 统一为运行时说明文档
-- [docs/file-module.md](/Users/mac/Desktop/TinyWebServer-master/docs/file-module.md) 补齐接口边界、权限模型和存储说明
+- [README.md](README.md) 重组为产品化工程首页
+- [docs/benchmark.md](docs/benchmark.md) 收敛为标准性能报告
+- [docs/architecture.md](docs/architecture.md) 和 [docs/request-sequence.md](docs/request-sequence.md) 统一为运行时说明文档
+- [docs/file-module.md](docs/file-module.md) 补齐接口边界、权限模型和存储说明
 
 ### Added Files
 

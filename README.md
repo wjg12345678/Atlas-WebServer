@@ -284,7 +284,7 @@ export TWS_DB_NAME=qgydb
 
 ## 配置说明
 
-默认配置文件为 [server.conf](/Users/mac/Desktop/TinyWebServer-master/server.conf)，环境变量优先级高于配置文件。
+默认配置文件为 [server.conf](server.conf)，环境变量优先级高于配置文件。
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -877,7 +877,7 @@ curl -i http://127.0.0.1:9006/
 
 ### 压测数据文件字段
 
-结构化性能数据记录在 [docs/benchmark.csv](/Users/mac/Desktop/TinyWebServer-master/docs/benchmark.csv)。
+结构化性能数据记录在 [docs/benchmark.csv](docs/benchmark.csv)。
 
 | 字段 | 说明 |
 | --- | --- |
@@ -909,14 +909,14 @@ curl -i http://127.0.0.1:9006/
 
 ## 文档索引
 
-- [README 首页](/Users/mac/Desktop/TinyWebServer-master/README.md)
-- [架构说明](/Users/mac/Desktop/TinyWebServer-master/docs/architecture.md)
-- [接口文档](/Users/mac/Desktop/TinyWebServer-master/docs/api.md)
-- [请求时序](/Users/mac/Desktop/TinyWebServer-master/docs/request-sequence.md)
-- [文件模块](/Users/mac/Desktop/TinyWebServer-master/docs/file-module.md)
-- [性能报告](/Users/mac/Desktop/TinyWebServer-master/docs/benchmark.md)
-- [发布说明](/Users/mac/Desktop/TinyWebServer-master/RELEASE_NOTES.md)
+- [README 首页](README.md)
+- [架构说明](docs/architecture.md)
+- [接口文档](docs/api.md)
+- [请求时序](docs/request-sequence.md)
+- [文件模块](docs/file-module.md)
+- [性能报告](docs/benchmark.md)
+- [发布说明](RELEASE_NOTES.md)
 
 ## 许可证
 
-[MIT License](/Users/mac/Desktop/TinyWebServer-master/LICENSE)
+[MIT License](LICENSE)

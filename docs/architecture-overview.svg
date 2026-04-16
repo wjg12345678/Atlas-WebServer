@@ -98,5 +98,5 @@
   <path d="M610 650V700C610 730 432 730 432 744" stroke="#9C7350" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
   <path d="M1010 650V700C1010 730 1208 730 1208 744" stroke="#9C7350" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 
-  <text x="92" y="922" fill="#7A6453" font-family="Georgia, 'Songti SC', serif" font-size="18">适用于 README、面试投屏、项目答辩的静态架构总览图</text>
+  <text x="92" y="922" fill="#7A6453" font-family="Georgia, 'Songti SC', serif" font-size="18">用于 README、设计评审和运行时说明的静态架构总览图</text>
 </svg>

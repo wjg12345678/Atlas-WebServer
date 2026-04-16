@@ -1,6 +1,6 @@
 # Benchmark Report
 
-这份文档记录当前仓库一套可复现、可讲述的正式压测结果，重点回答 5 个问题：
+这份文档记录当前仓库一套可复现的正式压测结果，重点回答 5 个问题：
 
 - 压测场景是否分层
 - 压测变量是否固定
@@ -135,3 +135,33 @@
   - `reports/benchmarks/20260413_153624/`
   - `reports/benchmarks/20260413_154220/`
 - 1000 并发补充：本轮手工 `wrk` 输出，已整理进 [benchmark.csv](benchmark.csv)
+
+## benchmark.csv 字段说明
+
+`[benchmark.csv](/Users/mac/Desktop/TinyWebServer-master/docs/benchmark.csv)` 用于沉淀结构化性能数据，字段含义如下：
+
+| Field | Description |
+| --- | --- |
+| `endpoint` | 请求路径 |
+| `method` | HTTP 方法 |
+| `concurrency` | `wrk` 并发连接数 |
+| `duration_seconds` | 压测持续时间，单位秒 |
+| `threads` | `wrk` 工作线程数 |
+| `request_size_bytes` | 请求体字节数；无请求体时为 `0` |
+| `db_hit` | 是否命中数据库，`1` 表示会访问 MySQL |
+| `https` | 是否启用 HTTPS，`1` 表示启用 |
+| `requests_per_sec` | 吞吐，单位 `req/s` |
+| `avg_latency` | 平均延迟 |
+| `p50_latency` | P50 延迟 |
+| `p90_latency` | P90 延迟 |
+| `p99_latency` | P99 延迟 |
+| `errors` | `wrk` 输出中的错误汇总 |
+| `web_cpu_peak` | 压测期间 `web` 容器 CPU 峰值 |
+| `mysql_cpu_peak` | 压测期间 `mysql` 容器 CPU 峰值 |
+| `source` | 原始结果来源文件或手工采样说明 |
+
+补充说明：
+
+- `NA` 表示该轮未采集到对应容器 CPU 指标
+- 延迟字段保持 `wrk` 原始单位，不额外做数值归一化
+- `db_hit` 和 `https` 为便于筛选和聚合而保留的布尔型标记字段

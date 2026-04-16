@@ -67,11 +67,10 @@ sequenceDiagram
     participant DB as MySQL
 
     C->>SR: POST /api/private/files
-    Note over C,SR: Authorization + multipart/form-data
+    Note over C,SR: Authorization + JSON body
     SR->>TP: append_p()
     TP->>HC: process()
     HC->>HC: parse_post_body()
-    HC->>HC: parse_multipart_form_data()
     HC->>HC: middleware_auth()
     HC->>DB: lookup_session(token)
     DB-->>HC: username
@@ -127,10 +126,10 @@ sequenceDiagram
     end
 ```
 
-## 面试时可以怎么讲
+## 关键说明
 
-- 主 Reactor 只负责接入，不做业务，避免监听线程被耗时逻辑阻塞。
-- SubReactor 负责连接级读写和超时管理，线程池负责业务解析和数据库访问。
-- `http_conn` 是请求处理核心，串联了解析、鉴权、路由、数据库和响应拼装。
-- 文件服务在逻辑上拆成两部分：文件内容进文件系统，元数据和审计进 MySQL。
+- 主 Reactor 只负责接入，不承担业务执行，避免监听线程被耗时逻辑阻塞。
+- SubReactor 负责连接级读写事件和超时管理，线程池负责业务解析和数据库访问。
+- `http_conn` 是请求处理核心，串联了解析、鉴权、路由、数据库操作和响应拼装。
+- 文件服务按“文件内容落磁盘、元数据和审计落 MySQL”的方式拆分。
 - 私有接口统一走 `middleware_auth()`，token 先查内存缓存，再回落到 `user_sessions`。

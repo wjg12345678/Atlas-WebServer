@@ -144,6 +144,17 @@
                 line-height: 1.6;
             }
 
+            .toolbar-actions {
+                display: flex;
+                flex-wrap: nowrap;
+                gap: 10px;
+                min-width: 0;
+            }
+
+            .toolbar-actions > * {
+                flex: 0 0 auto;
+            }
+
             .empty {
                 padding: 30px 18px;
                 text-align: center;
@@ -250,7 +261,7 @@
                                 <h3 class="toolbar-title">文件列表</h3>
                                 <div class="mini">这里展示当前账号的文件，可执行下载、删除、公开范围设置与分享链接复制。</div>
                             </div>
-                            <div class="row" style="min-width: 260px;">
+                            <div class="toolbar-actions">
                                 <button type="button" id="refresh-files-btn" class="ghost">刷新文件</button>
                                 <button type="button" id="refresh-public-files-btn" class="ghost">刷新公开区</button>
                                 <button type="button" id="refresh-logs-btn" class="ghost">刷新日志</button>

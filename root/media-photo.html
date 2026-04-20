@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Atlas WebServer | 照片查看</title>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+        <link rel="stylesheet" href="./atlas.css">
+        <style>
+            .shell {
+                width: min(1180px, calc(100% - 32px));
+            }
+
+            .meta {
+                margin-top: 10px;
+                color: var(--muted);
+                line-height: 1.7;
+            }
+
+            .media-box {
+                margin-top: 22px;
+                padding: 18px;
+                border-radius: 26px;
+                border: 1px solid rgba(159, 77, 47, 0.14);
+                background: rgba(255, 250, 242, 0.82);
+            }
+
+            .media-box img {
+                display: block;
+                width: 100%;
+                border-radius: 18px;
+                background: #0d0d10;
+                box-shadow: var(--shadow);
+            }
+
+            .link-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+                margin-top: 18px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="shell">
+            <section class="hero">
+                <p class="eyebrow">Photo Viewer</p>
+                <h1>照片查看页</h1>
+                <p>这里专门展示静态照片资源，不混排视频内容，方便单独检查图片展示效果。</p>
+            </section>
+
+            <section class="card">
+                <p class="kicker">Photo</p>
+                <h2>照片预览</h2>
+                <p class="meta">资源文件：<code>/IMG_20260419_214731.png</code></p>
+                <div class="media-box">
+                    <img src="/IMG_20260419_214731.png" alt="静态照片预览">
+                </div>
+                <div class="link-row">
+                    <a class="link-button" href="/IMG_20260419_214731.png" target="_blank" rel="noopener">新窗口打开照片</a>
+                    <a class="link-button secondary" href="/media.html">返回资源入口</a>
+                </div>
+            </section>
+        </div>
+    </body>
+</html>

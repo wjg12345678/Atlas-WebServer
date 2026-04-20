@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Atlas WebServer | 静态资源</title>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+        <link rel="stylesheet" href="./atlas.css">
+        <style>
+            .shell {
+                width: min(980px, calc(100% - 32px));
+            }
+
+            .grid.two {
+                align-items: stretch;
+            }
+
+            .card h2 {
+                margin: 0;
+                font-size: 30px;
+            }
+
+            .meta {
+                margin-top: 12px;
+                color: var(--muted);
+                line-height: 1.75;
+            }
+
+            .preview-chip {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 90px;
+                min-height: 34px;
+                padding: 0 12px;
+                border-radius: 999px;
+                background: rgba(159, 77, 47, 0.1);
+                color: var(--accent-strong);
+                font-size: 12px;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+            }
+
+            .actions {
+                margin-top: 22px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="shell">
+            <section class="hero">
+                <p class="eyebrow">Static Media</p>
+                <h1>静态资源入口</h1>
+                <p>这里不直接混排展示资源，而是先分流到两个独立页面。你可以选择进入照片页或视频页，分别查看不同类型的静态内容。</p>
+            </section>
+
+            <section class="grid two">
+                <article class="card">
+                    <span class="preview-chip">Photo</span>
+                    <h2>看照片</h2>
+                    <p class="meta">进入照片页后，只展示静态图片资源，适合专门查看大图内容和图片加载效果。</p>
+                    <div class="actions">
+                        <a class="link-button" href="/media-photo.html">进入照片页</a>
+                    </div>
+                </article>
+
+                <article class="card">
+                    <span class="preview-chip">Video</span>
+                    <h2>看视频</h2>
+                    <p class="meta">进入视频页后，只展示 MP4 资源，适合专门检查播放器、进度条和视频加载行为。</p>
+                    <div class="actions">
+                        <a class="link-button" href="/media-video.html">进入视频页</a>
+                    </div>
+                </article>
+            </section>
+        </div>
+    </body>
+</html>

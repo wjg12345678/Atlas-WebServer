@@ -144,6 +144,17 @@ curl -i http://127.0.0.1:9006/healthz
 docker compose down
 ```
 
+### 使用 perf + FlameGraph 做性能分析
+
+如果你在 macOS 上开发，建议通过 Docker 中的 Linux 环境完成采样。仓库已经提供 profiling 专用镜像、compose 覆盖文件和一键脚本：
+
+```bash
+chmod +x scripts/profile_perf_flamegraph.sh
+./scripts/profile_perf_flamegraph.sh
+```
+
+输出会落到 `reports/perf/<timestamp>/`，包含 `perf.data`、折叠栈和 `flamegraph.svg`。更详细说明见 [docs/perf-flamegraph.md](docs/perf-flamegraph.md)。
+
 ### 本地编译运行
 
 环境要求：
@@ -407,6 +418,47 @@ curl -i http://127.0.0.1:9006/
 - 只要把其中一侧切到 `ET`，吞吐和延迟通常都会优于 `LT/LT`。
 - `connfd` 使用 `ET` 的收益更明显，说明连接级读写事件的重复通知成本更值得优化。
 - 综合吞吐和延迟，当前实现最适合继续使用 `3 = ET/ET`。
+
+### 日志与线程池组合对比
+
+基于同一台机器、同一套 Docker Compose 环境，对 `GET /healthz` 做了 4 组 `perf + FlameGraph + wrk` 组合测试，固定条件如下：
+
+- 机器与部署方式不变：本机 `docker compose up -d`
+- 压测工具：`wrk -t4 -c200 -d15s --latency`
+- 场景：`GET /healthz`
+- 线程池基础线程数：`TWS_THREAD_NUM=8`
+- 对比变量：日志模式、线程池是否允许动态扩缩
+
+配置定义：
+
+- `异步日志 + 动态线程池`：`TWS_LOG_WRITE=1`，`TWS_THREADPOOL_MAX_THREADS=16`
+- `同步日志 + 动态线程池`：`TWS_LOG_WRITE=0`，`TWS_THREADPOOL_MAX_THREADS=16`
+- `异步日志 + 固定线程池`：`TWS_LOG_WRITE=1`，`TWS_THREADPOOL_MAX_THREADS=8`
+- `同步日志 + 固定线程池`：`TWS_LOG_WRITE=0`，`TWS_THREADPOOL_MAX_THREADS=8`
+
+#### 实测数据
+
+| 组合 | Requests/sec | P50 | P90 | P99 | 结论 |
+| --- | ---: | --- | --- | --- | --- |
+| 异步日志 + 动态线程池 | 8096.56 | 19.75ms | 34.61ms | 116.72ms | 当前基线，吞吐最低，但 P99 最稳 |
+| 同步日志 + 动态线程池 | 10234.17 | 16.42ms | 29.86ms | 494.38ms | 吞吐提升，说明异步日志队列本身有额外成本，但尾延迟明显变差 |
+| 异步日志 + 固定线程池 | 11476.77 | 14.25ms | 23.60ms | 462.23ms | 当前最值得保留的方向，固定线程池带来的收益最明显 |
+| 同步日志 + 固定线程池 | 12406.28 | 14.62ms | 23.54ms | 540.55ms | 吞吐最高，但更像用尾延迟换吞吐，不适合直接作为默认上线配置 |
+
+#### FlameGraph 观察
+
+- 基线 `异步日志 + 动态线程池` 下，热点集中在 `Log::write_log`、`block_queue::push/pop`、`threadpool<HttpConnection>::enqueue/run`、`futex_wake` 和 `_raw_spin_unlock_irqrestore`。
+- 切到 `同步日志` 后，异步队列的 `push/pop` 热点下降，但 `Log::write_log` 本身更直接压回请求线程，P99 明显恶化。
+- 固定线程池后，`threadpool` 扩缩容带来的调度抖动下降，吞吐提升幅度明显大于单独切同步日志。
+- 组合实验说明：当前轻请求场景的主要性能问题不是业务逻辑本身，而是日志与线程池相关的锁竞争、条件变量唤醒和任务投递成本。
+
+#### 结论
+
+- `异步日志 + 动态线程池` 是当前基线，问题在于异步日志队列和动态线程池都引入了明显的锁竞争与唤醒开销。
+- `同步日志 + 动态线程池` 吞吐更高，说明当前异步日志实现并没有发挥出预期收益，反而带来了额外成本。
+- `异步日志 + 固定线程池` 是现阶段最值得保留的方向，说明“线程池动态扩缩”比“异步日志队列”更伤性能。
+- `同步日志 + 固定线程池` 虽然吞吐最高，但尾延迟最差，不适合作为直接默认配置。
+- 综合吞吐、实现风险和线上稳定性，当前更合理的默认策略是：继续保留异步日志，但使用固定大小线程池，并优先优化轻请求的线程池投递路径。
 
 ### 优化优先级
 

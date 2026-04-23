@@ -364,6 +364,50 @@ curl -i http://127.0.0.1:9006/
 - 日志实现值得优先优化：在同机同压测条件下，同步日志 `TWS_LOG_WRITE=0` 明显优于异步日志 `TWS_LOG_WRITE=1`，说明当前异步日志实现更像额外开销来源，而不是收益点。
 - 这组数据能说明当前系统的瓶颈分布和大致性能上限，但不能单独证明主从 `Reactor` 相比单 `Reactor` 的收益，因为仓库内没有同条件的单 `Reactor` A/B 对照数据。
 
+### LT/ET 触发模式对比
+
+本轮额外对 `trig_mode` 的 4 种组合做了可复现压测，固定条件如下：
+
+- 机器与部署方式不变：本机 `docker compose up -d`
+- 固定配置：`TWS_LOG_WRITE=0`
+- 压测工具：`wrk -t4 -d10s --latency`
+- 场景：`GET /healthz` 与 `GET /api/private/ping`
+- 并发：`200`、`500`
+
+模式映射：
+
+- `0`：`listenfd LT + connfd LT`
+- `1`：`listenfd LT + connfd ET`
+- `2`：`listenfd ET + connfd LT`
+- `3`：`listenfd ET + connfd ET`
+
+#### 吞吐对比
+
+| 模式 | `/healthz` `c=200` | `/healthz` `c=500` | `/api/private/ping` `c=200` | `/api/private/ping` `c=500` |
+| --- | ---: | ---: | ---: | ---: |
+| `0 LT/LT` | 9557.94 req/s | 9768.11 req/s | 9035.52 req/s | 7604.08 req/s |
+| `1 LT/ET` | 10505.95 req/s | 9794.33 req/s | 9888.52 req/s | 10067.04 req/s |
+| `2 ET/LT` | 10779.72 req/s | 9892.14 req/s | 9592.16 req/s | 10399.59 req/s |
+| `3 ET/ET` | 11183.76 req/s | 9896.31 req/s | 9341.16 req/s | 10687.70 req/s |
+
+#### 延迟样例
+
+`/api/private/ping` 在 `500` 并发下的延迟表现更能体现差异：
+
+| 模式 | Avg | P50 | P90 | P99 |
+| --- | --- | --- | --- | --- |
+| `0 LT/LT` | 70.50ms | 57.89ms | 99.41ms | 417.95ms |
+| `1 LT/ET` | 56.22ms | 45.50ms | 72.53ms | 412.17ms |
+| `2 ET/LT` | 53.03ms | 44.49ms | 70.20ms | 239.96ms |
+| `3 ET/ET` | 51.70ms | 42.26ms | 68.02ms | 255.84ms |
+
+#### 结论
+
+- `0 = LT/LT` 整体最弱，尤其在 `GET /api/private/ping` `c=500` 下明显落后。
+- 只要把其中一侧切到 `ET`，吞吐和延迟通常都会优于 `LT/LT`。
+- `connfd` 使用 `ET` 的收益更明显，说明连接级读写事件的重复通知成本更值得优化。
+- 综合吞吐和延迟，当前实现最适合继续使用 `3 = ET/ET`。
+
 ### 优化优先级
 
 1. 优化日志模块实现，先消除异步日志引入的额外锁竞争与队列开销。

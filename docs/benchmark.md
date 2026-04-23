@@ -117,6 +117,52 @@
 - 当前实现里，异步日志并不是收益点，反而更像额外的锁竞争或队列开销来源。
 - 这也是本文发布数据选择同步日志模式的直接原因。
 
+## LT/ET 触发模式对比
+
+为了评估 `trig_mode` 对轻读路径的影响，额外补做了一轮 4 种组合对比实验。
+
+固定条件：
+
+- 机器与部署方式不变：本机 `docker compose up -d`
+- 固定配置：`TWS_LOG_WRITE=0`
+- 压测命令：`wrk -t4 -d10s --latency`
+- 场景：`GET /healthz`、`GET /api/private/ping`
+- 并发：`200`、`500`
+
+模式映射：
+
+- `0`：`listenfd LT + connfd LT`
+- `1`：`listenfd LT + connfd ET`
+- `2`：`listenfd ET + connfd LT`
+- `3`：`listenfd ET + connfd ET`
+
+### 吞吐对比
+
+| 模式 | `/healthz` `c=200` | `/healthz` `c=500` | `/api/private/ping` `c=200` | `/api/private/ping` `c=500` |
+| --- | ---: | ---: | ---: | ---: |
+| `0 LT/LT` | 9557.94 req/s | 9768.11 req/s | 9035.52 req/s | 7604.08 req/s |
+| `1 LT/ET` | 10505.95 req/s | 9794.33 req/s | 9888.52 req/s | 10067.04 req/s |
+| `2 ET/LT` | 10779.72 req/s | 9892.14 req/s | 9592.16 req/s | 10399.59 req/s |
+| `3 ET/ET` | 11183.76 req/s | 9896.31 req/s | 9341.16 req/s | 10687.70 req/s |
+
+### 延迟对比
+
+`/api/private/ping` 在 `500` 并发下的延迟差异最有代表性：
+
+| 模式 | Avg | P50 | P90 | P99 | Errors |
+| --- | --- | --- | --- | --- | --- |
+| `0 LT/LT` | 70.50ms | 57.89ms | 99.41ms | 417.95ms | `read 566, timeout 56` |
+| `1 LT/ET` | 56.22ms | 45.50ms | 72.53ms | 412.17ms | `read 534, timeout 31` |
+| `2 ET/LT` | 53.03ms | 44.49ms | 70.20ms | 239.96ms | `read 551, timeout 12` |
+| `3 ET/ET` | 51.70ms | 42.26ms | 68.02ms | 255.84ms | `read 480, timeout 26` |
+
+### 结论
+
+- `LT/LT` 是这轮实验里最弱的组合，尤其在 `GET /api/private/ping` `c=500` 下吞吐最低、尾延迟最差。
+- 只要把 `listenfd` 或 `connfd` 其中一侧切到 `ET`，轻读路径表现都会明显优于 `LT/LT`。
+- `connfd` 使用 `ET` 的收益更稳定，说明连接级读写事件减少重复通知后，对当前实现帮助更大。
+- 综合吞吐与延迟，`ET/ET` 仍是本项目当前最合适的默认配置。
+
 ## 结论
 
 - `GET /healthz` 和首页静态资源可以跑到 `5k~7k req/s` 量级，说明连接接入、静态路由和基础响应路径是能打的。

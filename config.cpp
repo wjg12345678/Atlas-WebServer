@@ -33,8 +33,8 @@ Config::Config(){
     //端口号,默认9006
     PORT = 9006;
 
-    //日志写入方式，默认同步
-    LOGWrite = 0;
+    //日志写入方式，默认异步
+    LOGWrite = 1;
 
     log_level = 1;
     log_split_lines = 800000;
@@ -79,7 +79,7 @@ Config::Config(){
     db_name = "qgydb";
 
     conn_timeout = 15;
-    threadpool_max_threads = 16;
+    threadpool_max_threads = 8;
     threadpool_idle_timeout = 30;
     mysql_idle_timeout = 60;
     m_config_file_path = "server.conf";

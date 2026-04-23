@@ -186,6 +186,7 @@ private:
     const char *method_name() const;
     bool is_api_request() const;
     bool requires_auth() const;
+    bool should_skip_request_log() const;
 
     // Authentication and session management.
     string make_session_token(const string &username) const;

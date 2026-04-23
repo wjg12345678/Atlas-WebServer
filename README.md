@@ -202,7 +202,7 @@ export TWS_DB_NAME=qgydb
 | `db_user` / `TWS_DB_USER` | `root` | 数据库用户名 |
 | `db_password` / `TWS_DB_PASSWORD` | 空 | 数据库密码 |
 | `db_name` / `TWS_DB_NAME` | `qgydb` | 数据库名 |
-| `threadpool_max_threads` / `TWS_THREADPOOL_MAX_THREADS` | `16` | 线程池最大线程数 |
+| `threadpool_max_threads` / `TWS_THREADPOOL_MAX_THREADS` | `8` | 线程池最大线程数，默认与 `thread_num` 相同，形成固定大小线程池 |
 | `threadpool_idle_timeout` / `TWS_THREADPOOL_IDLE_TIMEOUT` | `30` | 线程池空闲线程回收秒数 |
 | `mysql_idle_timeout` / `TWS_MYSQL_IDLE_TIMEOUT` | `60` | MySQL 连接空闲回收秒数 |
 | `pid_file` / `TWS_PID_FILE` | `./atlas-webserver.pid` | PID 文件路径 |

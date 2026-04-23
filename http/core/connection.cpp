@@ -289,6 +289,27 @@ bool HttpConnection::requires_auth() const
            strncasecmp(m_url, "/api/admin/", strlen("/api/admin/")) == 0;
 }
 
+bool HttpConnection::should_skip_request_log() const
+{
+    if (m_url == nullptr)
+    {
+        return false;
+    }
+
+    if (strcasecmp(m_url, "/healthz") == 0)
+    {
+        return true;
+    }
+
+    // Skip high-frequency static GET/HEAD requests to reduce lock contention in request logging.
+    if ((m_method == GET || m_method == HEAD) && !is_api_request())
+    {
+        return true;
+    }
+
+    return false;
+}
+
 
 HttpConnection::HTTP_CODE HttpConnection::do_request()
 {
@@ -379,7 +400,7 @@ HttpConnection::HTTP_CODE HttpConnection::run_after_middlewares(HTTP_CODE code)
 
 HttpConnection::HTTP_CODE HttpConnection::middleware_request_log()
 {
-    if (0 == m_close_log)
+    if (0 == m_close_log && !should_skip_request_log())
     {
         Log::get_instance()->write_log(1, "request %s %s content_type=%s content_length=%ld",
                                        method_name(), m_url ? m_url : "",

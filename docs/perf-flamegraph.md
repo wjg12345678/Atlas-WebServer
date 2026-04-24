@@ -63,6 +63,19 @@ SAMPLE_FREQ=199 \
 - `perf.folded`：折叠后的火焰图输入
 - `flamegraph.svg`：最终火焰图
 
+## 示例火焰图
+
+下面这张图来自仓库内一份实际采样结果，场景是默认的 `GET /healthz`、`4` 线程、`200` 连接、`15s` 压测：
+
+- 交互式 SVG：[`reports/perf/20260423_152955/flamegraph.svg`](../reports/perf/20260423_152955/flamegraph.svg)
+- GitHub 预览回退图：[`reports/perf/previews/healthz_flamegraph.png`](../reports/perf/previews/healthz_flamegraph.png)
+
+![Healthz FlameGraph SVG](../reports/perf/20260423_152955/flamegraph.svg)
+
+如果当前页面的 SVG 无法正常预览，通常是 GitHub 对带脚本的 SVG 支持有限；这时可以直接点开上面的 SVG 链接，或者查看下面的 PNG 预览图：
+
+![Healthz FlameGraph Preview](../reports/perf/previews/healthz_flamegraph.png)
+
 ## 解读建议
 
 - 横向更宽的函数表示累计 CPU 时间更高，应先排查
